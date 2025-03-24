@@ -11,27 +11,27 @@ import { SitemarkIcon } from './CustomIcons';
 const items = [
   {
     icon: <SettingsSuggestRoundedIcon sx={{ color: 'text.secondary' }} />,
-    title: 'Adaptable performance',
+    title: 'Smart Inventory Control',
     description:
-      'Our product effortlessly adjusts to your needs, boosting efficiency and simplifying your tasks.',
+      'Automated stock alerts, predictive analytics, and intelligent reordering suggestions help you maintain optimal inventory levels and reduce stockouts.',
   },
   {
     icon: <ConstructionRoundedIcon sx={{ color: 'text.secondary' }} />,
-    title: 'Built to last',
+    title: 'Scalable Solution',
     description:
-      'Experience unmatched durability that goes above and beyond with lasting investment.',
+      'Whether you manage a small shop or multiple locations, our system grows with your business, handling increased inventory and complex operations seamlessly.',
   },
   {
     icon: <ThumbUpAltRoundedIcon sx={{ color: 'text.secondary' }} />,
     title: 'Great user experience',
     description:
-      'Integrate our product into your routine with an intuitive and easy-to-use interface.',
+      'Streamline your daily operations with a clean, organized dashboard that puts all your stock management tools right at your fingertips.',
   },
   {
     icon: <AutoFixHighRoundedIcon sx={{ color: 'text.secondary' }} />,
-    title: 'Innovative functionality',
+    title: 'Easy to Use',
     description:
-      'Stay ahead with features that set new standards, addressing your evolving needs better than the rest.',
+      'Our intuitive interface makes stock management a breeze. Track inventory, manage orders, and generate reports with just a few clicks. No complex training needed - get started managing your retail inventory right away.',
   },
 ];
 
