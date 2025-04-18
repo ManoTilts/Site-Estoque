@@ -1,0 +1,16 @@
+.search-bar-container {
+    // You can add any additional custom styling here
+    // For example:
+    
+    .MuiFormControl-root {
+      margin-bottom: 0;
+    }
+    
+    .MuiFab-root {
+      transition: transform 0.2s ease-in-out;
+      
+      &:hover {
+        transform: scale(1.1);
+      }
+    }
+  }

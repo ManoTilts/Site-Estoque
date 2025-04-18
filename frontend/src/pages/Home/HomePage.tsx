@@ -20,6 +20,10 @@ import InboxIcon from '@mui/icons-material/MoveToInbox';
 import MailIcon from '@mui/icons-material/Mail';
 import ColorModeSelect from '../shared-theme/ColorModeSelect';
 import AppTheme from '../shared-theme/AppTheme';
+import ProductCard from '../../contexts/components/ProductCard'; 
+import Grid from '@mui/material/Grid'; 
+import SearchBar, { CardFormData } from '../../contexts/components/SearchBar';
+
 
 const drawerWidth = 240;
 
@@ -211,6 +215,23 @@ export default function HomePage() {
 
             Tente implementar os temas visuais nessa pagina tmb
           </Typography>
+          <SearchBar onSearch={function (searchTerm: string): void {
+            throw new Error('Function not implemented.');
+          } } onSort={function (sortBy: string): void {
+            throw new Error('Function not implemented.');
+          } } onAddCard={function (cardData: CardFormData): void {
+            throw new Error('Function not implemented.');
+          } }/>
+          <Grid container spacing={2}>
+            <Grid item xs={12}>
+              <ProductCard
+                title= 'Nigger'
+                description= 'Monkey ass Nigger'
+                imageUrl= 'https://thumbs.dreamstime.com/b/black-man-crying-6023548.jpg'
+                onAddToCart={() => console.log('Added a black ass Nigger to cart')}
+                />
+            </Grid>
+          </Grid>
         </Box>
       </Box>
     </AppTheme>
