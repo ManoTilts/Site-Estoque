@@ -381,6 +381,12 @@ export const inputsCustomizations: Components<Theme> = {
       input: {
         padding: 0,
       },
+      inputMultiline: {
+        padding: 0,
+        resize: 'vertical',
+        minHeight: '1.2em',
+        overflow: 'auto',
+      },
       root: ({ theme }) => ({
         padding: '8px 12px',
         color: (theme.vars || theme).palette.text.primary,
@@ -404,6 +410,7 @@ export const inputsCustomizations: Components<Theme> = {
           {
             props: {
               size: 'small',
+              multiline: false,
             },
             style: {
               height: '2.25rem',
@@ -412,9 +419,19 @@ export const inputsCustomizations: Components<Theme> = {
           {
             props: {
               size: 'medium',
+              multiline: false,
             },
             style: {
               height: '2.5rem',
+            },
+          },
+          {
+            props: {
+              multiline: true,
+            },
+            style: {
+              height: 'auto',
+              minHeight: '2.5rem',
             },
           },
         ],

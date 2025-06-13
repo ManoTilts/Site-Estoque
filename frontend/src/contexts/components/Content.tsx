@@ -44,7 +44,7 @@ export default function Content() {
         <SitemarkIcon />
       </Box>
       {items.map((item, index) => (
-        <Stack key={index} direction="row" sx={{ gap: 2 }}>
+        <Stack key={item.title} direction="row" sx={{ gap: 2 }}>
           {item.icon}
           <div>
             <Typography gutterBottom sx={{ fontWeight: 'medium' }}>

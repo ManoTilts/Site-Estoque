@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field, field_serializer, field_validator
-from typing import Optional, Annotated, Any
+from pydantic import BaseModel, Field, EmailStr, field_serializer, field_validator
+from typing import Optional, Annotated, Any, List
 from datetime import datetime
 from bson import ObjectId
 
@@ -23,11 +23,12 @@ class ItemBase(BaseModel):
     description: Optional[str] = None
     category: Optional[str] = None
     distributer: str
-    unit: Optional[str] = None
+    unit: Optional[str] = None  #unidade de medida
     stock: int
     price: float
-    barcode: str
+    barcode: Optional[str] = None  # Made optional so it can be auto-generated
     image: Optional[str] = None
+    associatedUser: str
     
 class ItemCreate(ItemBase):
     pass
@@ -37,6 +38,7 @@ class ItemUpdate(BaseModel):
     description: Optional[str] = None
     category: Optional[str] = None
     distributer: Optional[str] = None
+    unit: Optional[str] = None
     stock: Optional[int] = None
     price: Optional[float] = None
     image: Optional[str] = None
@@ -65,3 +67,46 @@ class ItemInDB(ItemBase):
         "populate_by_name": True,
         "arbitrary_types_allowed": True
     }
+
+# User models
+class UserBase(BaseModel):
+    email: EmailStr
+    username: str
+
+class UserCreate(UserBase):
+    password: str
+
+class UserInDB(UserBase):
+    id: str = Field(alias="_id")
+    hashed_password: str
+    is_active: bool = True
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = None
+
+class User(UserBase):
+    id: str
+    is_active: bool
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+class Token(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
+class TokenPayload(BaseModel):
+    sub: str
+    exp: int
+
+class TokenRefresh(BaseModel):
+    refresh_token: str
+
+class AuthResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    user: User

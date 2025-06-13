@@ -23,6 +23,7 @@ origins = [
     "http://localhost",
     "http://localhost:8080",
     "http://localhost:3000",  # React frontend default
+    "http://localhost:5173",  # Vite default
 ]
 
 app.add_middleware(

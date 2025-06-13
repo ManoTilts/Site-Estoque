@@ -11,8 +11,11 @@ import Link from '@mui/material/Link';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { styled } from '@mui/material/styles';
-import ForgotPassword from './ForgotPassword';
-import { GoogleIcon, FacebookIcon, SitemarkIcon } from './CustomIcons';
+import ForgotPassword from '../ForgotPassword';
+import { GoogleIcon, FacebookIcon, SitemarkIcon } from '../CustomIcons';
+import { useNavigate } from 'react-router-dom';
+import { login } from '../../../api/auth';
+import { useAuth } from '../../AuthContext';
 
 const Card = styled(MuiCard)(({ theme }) => ({
   display: 'flex',
@@ -33,11 +36,15 @@ const Card = styled(MuiCard)(({ theme }) => ({
 }));
 
 export default function SignInCard() {
+  const navigate = useNavigate();
+  const { setUser } = useAuth();
   const [emailError, setEmailError] = React.useState(false);
   const [emailErrorMessage, setEmailErrorMessage] = React.useState('');
   const [passwordError, setPasswordError] = React.useState(false);
   const [passwordErrorMessage, setPasswordErrorMessage] = React.useState('');
   const [open, setOpen] = React.useState(false);
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [loginError, setLoginError] = React.useState('');
 
   const handleClickOpen = () => {
     setOpen(true);
@@ -47,16 +54,37 @@ export default function SignInCard() {
     setOpen(false);
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    if (emailError || passwordError) {
-      event.preventDefault();
+  const handleSignIn = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!validateInputs()) {
       return;
     }
-    const data = new FormData(event.currentTarget);
-    console.log({
-      email: data.get('email'),
-      password: data.get('password'),
-    });
+
+    setIsLoading(true);
+    setLoginError('');
+
+    const emailInput = document.getElementById('email') as HTMLInputElement;
+    const passwordInput = document.getElementById('password') as HTMLInputElement;
+
+    try {
+      // Call the login API with the credentials
+      const response = await login({
+        username: emailInput.value, // Using full email for login
+        password: passwordInput.value,
+      });
+
+      // Set user in auth context
+      setUser(response.user);
+
+      // If successful, navigate to the home page
+      navigate('/home');
+    } catch (error) {
+      console.error('Login failed:', error);
+      setLoginError('Invalid email or password. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const validateInputs = () => {
@@ -98,9 +126,14 @@ export default function SignInCard() {
       >
         Sign in
       </Typography>
+      {loginError && (
+        <Typography color="error" sx={{ mt: 1 }}>
+          {loginError}
+        </Typography>
+      )}
       <Box
         component="form"
-        onSubmit={handleSubmit}
+        onSubmit={handleSignIn}
         noValidate
         sx={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 2 }}
       >
@@ -154,22 +187,29 @@ export default function SignInCard() {
           label="Remember me"
         />
         <ForgotPassword open={open} handleClose={handleClose} />
-        <Button type="submit" fullWidth variant="contained" onClick={validateInputs}>
-          Sign in
+        <Button
+          type="submit"
+          fullWidth
+          variant="contained"
+          sx={{ mt: 2 }}
+          disabled={isLoading}
+        >
+          {isLoading ? 'Signing in...' : 'Sign in'}
         </Button>
-        <Typography sx={{ textAlign: 'center' }}>
-          Don&apos;t have an account?{' '}
-          <span>
-            <Link
-              href="/material-ui/getting-started/templates/sign-in/"
-              variant="body2"
-              sx={{ alignSelf: 'center' }}
-            >
-              Sign up
-            </Link>
-          </span>
-        </Typography>
       </Box>
+      <Typography sx={{ mt: 2, textAlign: 'center' }}>
+        <span>
+          Don't have an account?{' '}
+          <Link
+            component="button"
+            variant="body2"
+            onClick={() => navigate('/signup')}
+            sx={{ alignSelf: 'center' }}
+          >
+            Sign up
+          </Link>
+        </span>
+      </Typography>
       <Divider>or</Divider>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Button
