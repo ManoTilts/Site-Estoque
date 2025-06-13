@@ -1,4 +1,3 @@
-import * as React from 'react';
 import Typography from '@mui/material/Typography';
 import { Card, CardContent, Avatar, Chip, Grid, Paper, Box, Divider } from '@mui/material';
 import { useAuth } from '../../contexts/AuthContext';
