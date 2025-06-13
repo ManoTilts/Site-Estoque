@@ -1,30 +1,9 @@
 import * as React from 'react';
-import { styled, useTheme, Theme, CSSObject } from '@mui/material/styles';
-import Box from '@mui/material/Box';
-import MuiDrawer from '@mui/material/Drawer';
-import MuiAppBar, { AppBarProps as MuiAppBarProps } from '@mui/material/AppBar';
-import Toolbar from '@mui/material/Toolbar';
-import List from '@mui/material/List';
-import CssBaseline from '@mui/material/CssBaseline';
 import Typography from '@mui/material/Typography';
-import Divider from '@mui/material/Divider';
-import IconButton from '@mui/material/IconButton';
-import MenuIcon from '@mui/icons-material/Menu';
-import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import ListItem from '@mui/material/ListItem';
-import ListItemButton from '@mui/material/ListItemButton';
-import ListItemIcon from '@mui/material/ListItemIcon';
-import ListItemText from '@mui/material/ListItemText';
-import InboxIcon from '@mui/icons-material/MoveToInbox';
-import MailIcon from '@mui/icons-material/Mail';
-import ColorModeSelect from '../shared-theme/ColorModeSelect';
-import AppTheme from '../shared-theme/AppTheme';
 import ProductCard from '../../contexts/components/ProductCard/ProductCard'; 
 import Grid from '@mui/material/Grid'; 
 import SearchBar, { CardFormData } from '../../contexts/components/SearchBar/SearchBar';
 import { 
-  Fab, 
   CircularProgress, 
   Dialog, 
   DialogTitle, 
@@ -34,93 +13,8 @@ import {
   TextField,
   Alert
 } from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
 import { productService, Item } from '../../api/funcs';
-
-
-const drawerWidth = 240;
-
-const openedMixin = (theme: Theme): CSSObject => ({
-  width: drawerWidth,
-  transition: theme.transitions.create('width', {
-    easing: theme.transitions.easing.sharp,
-    duration: theme.transitions.duration.enteringScreen,
-  }),
-  overflowX: 'hidden',
-});
-
-const closedMixin = (theme: Theme): CSSObject => ({
-  transition: theme.transitions.create('width', {
-    easing: theme.transitions.easing.sharp,
-    duration: theme.transitions.duration.leavingScreen,
-  }),
-  overflowX: 'hidden',
-  width: `calc(${theme.spacing(7)} + 1px)`,
-  [theme.breakpoints.up('sm')]: {
-    width: `calc(${theme.spacing(8)} + 1px)`,
-  },
-});
-
-const DrawerHeader = styled('div')(({ theme }) => ({
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'flex-end',
-  padding: theme.spacing(0, 1),
-  // necessary for content to be below app bar
-  ...theme.mixins.toolbar,
-}));
-
-interface AppBarProps extends MuiAppBarProps {
-  open?: boolean;
-}
-
-const AppBar = styled(MuiAppBar, {
-  shouldForwardProp: (prop) => prop !== 'open',
-})<AppBarProps>(({ theme }) => ({
-  zIndex: theme.zIndex.drawer + 1,
-  transition: theme.transitions.create(['width', 'margin'], {
-    easing: theme.transitions.easing.sharp,
-    duration: theme.transitions.duration.leavingScreen,
-  }),
-  variants: [
-    {
-      props: ({ open }) => open,
-      style: {
-        marginLeft: drawerWidth,
-        width: `calc(100% - ${drawerWidth}px)`,
-        transition: theme.transitions.create(['width', 'margin'], {
-          easing: theme.transitions.easing.sharp,
-          duration: theme.transitions.duration.enteringScreen,
-        }),
-      },
-    },
-  ],
-}));
-
-const Drawer = styled(MuiDrawer, { shouldForwardProp: (prop) => prop !== 'open' })(
-  ({ theme }) => ({
-    width: drawerWidth,
-    flexShrink: 0,
-    whiteSpace: 'nowrap',
-    boxSizing: 'border-box',
-    variants: [
-      {
-        props: ({ open }) => open,
-        style: {
-          ...openedMixin(theme),
-          '& .MuiDrawer-paper': openedMixin(theme),
-        },
-      },
-      {
-        props: ({ open }) => !open,
-        style: {
-          ...closedMixin(theme),
-          '& .MuiDrawer-paper': closedMixin(theme),
-        },
-      },
-    ],
-  }),
-);
+import AppLayout from '../../contexts/components/AppLayout/AppLayout';
 
 // Form data interface for managing products
 interface ManageProductFormData {
@@ -135,8 +29,6 @@ interface ManageProductFormData {
 }
 
 export default function HomePage() {
-  const theme = useTheme();
-  const [open, setOpen] = React.useState(false);
   const [products, setProducts] = React.useState<Item[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [searchTerm, setSearchTerm] = React.useState('');
@@ -158,14 +50,6 @@ export default function HomePage() {
     price: 0,
     image: ''
   });
-
-  const handleDrawerOpen = () => {
-    setOpen(true);
-  };
-
-  const handleDrawerClose = () => {
-    setOpen(false);
-  };
 
   // Function to fetch products from the backend using productService
   const fetchProducts = async () => {
@@ -222,14 +106,6 @@ export default function HomePage() {
       }
     }
   };
-  
-  // Function to open the add product dialog via SearchBar
-  const openAddProductDialog = () => {
-    // This will be handled by the SearchBar component's dialog
-    // We can either trigger the dialog programmatically or just inform the user
-    console.log('Use the + button in the search bar to add products');
-  };
-  
   // Function to handle managing a product
   const handleManageProduct = React.useCallback((productId: string) => {
     console.log('Managing product:', productId);
@@ -394,97 +270,14 @@ export default function HomePage() {
   }, []);
 
   return (
-    <AppTheme>
-      <Box sx={{ display: 'flex' }}>
-        <CssBaseline enableColorScheme />
-        <AppBar position="fixed" open={open}>
-          <Toolbar>
-            <IconButton
-              color="inherit"
-              aria-label="open drawer"
-              onClick={handleDrawerOpen}
-              edge="start"
-              sx={[
-                {
-                  marginRight: 5,
-                },
-                open && { display: 'none' },
-              ]}
-            >
-              <MenuIcon />
-            </IconButton>
-            <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
-              Home Page
-            </Typography>
-            <ColorModeSelect />
-          </Toolbar>
-        </AppBar>
-        <Drawer variant="permanent" open={open}>
-          <DrawerHeader>
-            <IconButton onClick={handleDrawerClose}>
-              {theme.direction === 'rtl' ? <ChevronRightIcon /> : <ChevronLeftIcon />}
-            </IconButton>
-          </DrawerHeader>
-          <Divider />
-          <List>
-            {['Home', 'Profile', 'DashBoard', 'Export Data', 'Activity Log'].map((text, index) => (
-              <ListItem key={text} disablePadding sx={{ display: 'block' }}>
-                <ListItemButton
-                  sx={[
-                    {
-                      minHeight: 48,
-                      px: 2.5,
-                    },
-                    open
-                      ? {
-                          justifyContent: 'initial',
-                        }
-                      : {
-                          justifyContent: 'center',
-                        },
-                  ]}
-                >
-                  <ListItemIcon
-                    sx={[
-                      {
-                        minWidth: 0,
-                        justifyContent: 'center',
-                      },
-                      open
-                        ? {
-                            mr: 3,
-                          }
-                        : {
-                            mr: 'auto',
-                          },
-                    ]}
-                  >
-                    {index % 2 === 0 ? <InboxIcon /> : <MailIcon />}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={text}
-                    sx={[
-                      open
-                        ? {
-                            opacity: 1,
-                          }
-                        : {
-                            opacity: 0,
-                          },
-                    ]}
-                  />
-                </ListItemButton>
-              </ListItem>
-            ))}
-          </List>
-        </Drawer>
-        <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
-          <DrawerHeader />          <Typography variant="h5" sx={{ marginBottom: 2 }}>
+    <AppLayout pageTitle="Home Page" currentPage="Home">
+      <Typography variant="h5" sx={{ marginBottom: 2 }}>
             Product Inventory
           </Typography>
           <Typography sx={{ marginBottom: 2 }}>
             Welcome to the product management system. Here you can search, sort, and manage your product inventory.
-          </Typography><SearchBar 
+      </Typography>
+      <SearchBar 
             onSearch={(searchTerm: string) => {
               console.log('Searching for:', searchTerm);
               setSearchTerm(searchTerm);
@@ -494,12 +287,14 @@ export default function HomePage() {
               setSortBy(sortBy);
             }}
             onAddCard={handleAddProduct}
-          /><Grid container spacing={4} sx={{ mt: 3, px: 2 }}>
+      />
+      <Grid container spacing={4} sx={{ mt: 3, px: 2 }}>
             {loading ? (
               <Grid item xs={12} sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
                 <CircularProgress />
               </Grid>
-            ) : filteredProducts.length > 0 ? (              filteredProducts.map((product, index) => (
+        ) : filteredProducts.length > 0 ? (
+          filteredProducts.map((product, index) => (
                 <Grid item xs={12} sm={6} md={4} lg={3} key={product.id || `product-${index}`} sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
                   <ProductCard
                     title={product.name}
@@ -530,18 +325,8 @@ export default function HomePage() {
               </Grid>
             )}
           </Grid>
-          
-          {/* Floating action button to add new products */}
-          <Fab 
-            color="primary" 
-            aria-label="add" 
-            onClick={openAddProductDialog}
-            sx={{ position: 'fixed', bottom: 16, right: 16 }}
-          >
-            <AddIcon />
-          </Fab>
-        </Box>
-      </Box>
+
+      {/* Product Management Dialog */}
              <Dialog 
          open={manageDialogOpen} 
          onClose={handleCloseManageDialog} 
@@ -737,6 +522,6 @@ export default function HomePage() {
            </Button>
          </DialogActions>
        </Dialog>
-    </AppTheme>
+    </AppLayout>
   );
 }

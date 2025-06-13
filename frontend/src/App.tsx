@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import SignInSide from './pages/Login/Sign-In/SignInSide'
 import SignUp from './pages/Login/Sign-Up/SignUp'
 import HomePage from './pages/Home/HomePage'
+import Profile from './pages/Profile/Profile'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 
 // Protected Route Component
@@ -29,8 +30,17 @@ function AppRoutes() {
           </ProtectedRoute>
         } 
       />
+      <Route 
+        path="/profile" 
+        element={
+          <ProtectedRoute>
+            <Profile />
+          </ProtectedRoute>
+        } 
+      />
       {/* For development, allow direct access to HomePage without auth check */}
       <Route path="/home-dev" element={<HomePage />} />
+      <Route path="/profile-dev" element={<Profile />} />
       {/* Redirect root to signin page */}
       <Route path="/" element={<Navigate to="/signin" replace />} />
     </Routes>
