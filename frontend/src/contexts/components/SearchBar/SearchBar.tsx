@@ -96,6 +96,16 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, onSort, onAddCard }) =>
     image: ''
   });
 
+  // Helper function to validate URL - defined early to avoid hoisting issues
+  const isValidUrl = (url: string): boolean => {
+    try {
+      new URL(url);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const steps = [
     {
       label: 'Basic Information',
@@ -197,15 +207,6 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, onSort, onAddCard }) =>
     return Object.keys(errors).length === 0;
   }, [formData, activeStep]);
 
-  const isValidUrl = (url: string): boolean => {
-    try {
-      new URL(url);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
   const handleNext = () => {
     if (validateStep(activeStep)) {
       setActiveStep(prev => prev + 1);
@@ -268,12 +269,19 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, onSort, onAddCard }) =>
 
   // Form validation
   const isFormValid = () => {
+    // Check all steps for errors
+    const allErrors = [
+      ...Object.keys(getStepErrors(0)),
+      ...Object.keys(getStepErrors(1)),
+      ...Object.keys(getStepErrors(2))
+    ];
+    
     return formData.title.trim() !== '' && 
            formData.distributer.trim() !== '' && 
            formData.unit.trim() !== '' &&
            formData.stock >= 0 &&
            formData.price >= 0 &&
-           Object.keys(formErrors).length === 0;
+           allErrors.length === 0;
   };
 
   const getStepContent = (step: number) => {
@@ -569,11 +577,14 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, onSort, onAddCard }) =>
         color="primary" 
         aria-label="add" 
         onClick={handleOpenDialog}
+        tabIndex={isDialogOpen ? -1 : 0}
         sx={{ 
           boxShadow: 3,
           transition: 'transform 0.2s ease-in-out',
+          opacity: isDialogOpen ? 0.5 : 1,
+          pointerEvents: isDialogOpen ? 'none' : 'auto',
           '&:hover': {
-            transform: 'scale(1.1)'
+            transform: !isDialogOpen ? 'scale(1.1)' : 'none'
           }
         }}
       >

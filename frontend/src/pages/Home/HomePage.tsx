@@ -88,7 +88,6 @@ export default function HomePage() {
       // Refresh the products list
       await fetchProducts();
       
-      console.log('Product added successfully');
       alert('Product added successfully!');
     } catch (error) {
       console.error('Error adding product:', error);
@@ -288,14 +287,14 @@ export default function HomePage() {
             }}
             onAddCard={handleAddProduct}
       />
-      <Grid container spacing={4} sx={{ mt: 3, px: 2 }}>
+      <Grid container spacing={3} sx={{ mt: 3, px: 2 }}>
             {loading ? (
               <Grid item xs={12} sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
                 <CircularProgress />
               </Grid>
         ) : filteredProducts.length > 0 ? (
           filteredProducts.map((product, index) => (
-                <Grid item xs={12} sm={6} md={4} lg={3} key={product.id || `product-${index}`} sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
+                <Grid item xs={12} sm={12} md={6} lg={6} xl={4} key={product.id || `product-${index}`} sx={{ display: 'flex', justifyContent: 'center', alignItems: 'stretch' }}>
                   <ProductCard
                     title={product.name}
                     description={product.description || ''}
