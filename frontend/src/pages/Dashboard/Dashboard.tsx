@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useState, useEffect } from 'react';
 import Typography from '@mui/material/Typography';
 import { 
   Card, 
@@ -15,7 +16,9 @@ import {
   List,
   ListItem,
   ListItemText,
-  ListItemAvatar
+  ListItemAvatar,
+  CircularProgress,
+  Alert
 } from '@mui/material';
 import {
   TrendingUp,
@@ -32,37 +35,10 @@ import {
   Circle
 } from '@mui/icons-material';
 import AppLayout from '../../contexts/components/AppLayout/AppLayout';
+import { dashboardService, DashboardData, DashboardKPIs, Item } from '../../api/funcs';
 
-// Mock data - in real app this would come from API
-const mockData = {
-  kpis: {
-    totalProducts: { value: 1247, change: 12.5, trend: 'up' as const },
-    lowStockItems: { value: 23, change: -8.3, trend: 'down' as const },
-    totalValue: { value: 485230, change: 18.2, trend: 'up' as const },
-    categories: { value: 15, change: 0, trend: 'neutral' as const },
-    monthlyOrders: { value: 892, change: 22.1, trend: 'up' as const },
-    reorderPoints: { value: 45, change: 15.8, trend: 'up' as const }
-  },
-  topProducts: [
-    { name: 'Wireless Headphones', stock: 85, sales: 156, value: 12450 },
-    { name: 'Smartphone Cases', stock: 234, sales: 98, value: 8670 },
-    { name: 'Laptop Stands', stock: 67, sales: 89, value: 7890 },
-    { name: 'USB Cables', stock: 145, sales: 167, value: 5430 },
-    { name: 'Bluetooth Speakers', stock: 78, sales: 134, value: 9870 }
-  ],
-  stockAlerts: [
-    { product: 'iPhone 15 Pro Cases', current: 12, minimum: 50, category: 'Electronics' },
-    { product: 'Gaming Keyboards', current: 8, minimum: 25, category: 'Gaming' },
-    { product: 'Wireless Mice', current: 15, minimum: 40, category: 'Computer' },
-    { product: 'Monitor Stands', current: 6, minimum: 20, category: 'Accessories' }
-  ],
-  recentActivity: [
-    { action: 'Stock Update', item: 'MacBook Pro M3', time: '5 min ago', type: 'update' },
-    { action: 'New Product', item: 'AirPods Pro 3', time: '1 hour ago', type: 'add' },
-    { action: 'Low Stock Alert', item: 'Samsung Galaxy S24', time: '2 hours ago', type: 'alert' },
-    { action: 'Category Created', item: 'Smart Home', time: '3 hours ago', type: 'category' }
-  ]
-};
+// Low stock threshold
+const LOW_STOCK_THRESHOLD = 10; //later make this dynamic
 
 // KPI Card Component
 const KPICard = ({ title, value, icon, change, trend, format = 'number' }: {
@@ -75,7 +51,18 @@ const KPICard = ({ title, value, icon, change, trend, format = 'number' }: {
 }) => {
   const formatValue = (val: number) => {
     if (format === 'currency') {
+      if (val >= 1000000) {
+        return `$${(val / 1000000).toFixed(2)}M`;
+      } else if (val >= 1000) {
+        return `$${(val / 1000).toFixed(2)}K`;
+      }
       return `$${val.toLocaleString()}`;
+    }
+    
+    if (val >= 1000000) {
+      return `${(val / 1000000).toFixed(1)}M`;
+    } else if (val >= 1000) {
+      return `${(val / 1000).toFixed(1)}K`;
     }
     return val.toLocaleString();
   };
@@ -176,6 +163,86 @@ const ChartPlaceholder = ({ title, height = 300 }: { title: string; height?: num
 );
 
 export default function Dashboard() {
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [kpiData, setKpiData] = useState<DashboardKPIs | null>(null);
+  const [topProducts, setTopProducts] = useState<Item[]>([]);
+  const [recentActivity, setRecentActivity] = useState<Array<{ action: string; item: string; time: string; type: string }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Fetch all dashboard data using the centralized service
+      const [
+        dashData,
+        kpiData,
+        topProductsData,
+        recentActivityData
+      ] = await Promise.all([
+        dashboardService.getDashboardData(LOW_STOCK_THRESHOLD),
+        dashboardService.getDashboardKPIs(LOW_STOCK_THRESHOLD),
+        dashboardService.getTopProductsByValue(5),
+        Promise.resolve(dashboardService.getRecentActivity())
+      ]);
+
+      setDashboardData(dashData);
+      setKpiData(kpiData);
+      setTopProducts(topProductsData);
+      setRecentActivity(recentActivityData);
+      setLastUpdated(new Date());
+    } catch (err) {
+      console.error('Error loading dashboard data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load dashboard data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const handleRefresh = () => {
+    loadDashboardData();
+  };
+
+  if (loading) {
+    return (
+      <AppLayout pageTitle="Analytics Dashboard" currentPage="DashBoard">
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+          <CircularProgress />
+        </Box>
+      </AppLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <AppLayout pageTitle="Analytics Dashboard" currentPage="DashBoard">
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+        <Box display="flex" justifyContent="center">
+          <IconButton onClick={handleRefresh} color="primary">
+            <Refresh />
+          </IconButton>
+        </Box>
+      </AppLayout>
+    );
+  }
+
+  if (!dashboardData || !kpiData) {
+    return (
+      <AppLayout pageTitle="Analytics Dashboard" currentPage="DashBoard">
+        <Alert severity="warning">No data available</Alert>
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout pageTitle="Analytics Dashboard" currentPage="DashBoard">
       {/* Header Section */}
@@ -189,11 +256,11 @@ export default function Dashboard() {
           </Typography>
         </Box>
         <Box display="flex" gap={1}>
-          <IconButton color="primary">
+          <IconButton color="primary" onClick={handleRefresh}>
             <Refresh />
           </IconButton>
           <Chip 
-            label="Last updated: 2 min ago" 
+            label={`Last updated: ${lastUpdated.toLocaleTimeString()}`}
             size="small" 
             variant="outlined" 
             color="success"
@@ -206,56 +273,56 @@ export default function Dashboard() {
         <Grid item xs={12} sm={6} md={4} lg={2}>
           <KPICard
             title="Total Products"
-            value={mockData.kpis.totalProducts.value}
+            value={kpiData.totalProducts.value}
             icon={<Inventory />}
-            change={mockData.kpis.totalProducts.change}
-            trend={mockData.kpis.totalProducts.trend}
+            change={kpiData.totalProducts.change}
+            trend={kpiData.totalProducts.trend}
           />
         </Grid>
         <Grid item xs={12} sm={6} md={4} lg={2}>
           <KPICard
             title="Low Stock Items"
-            value={mockData.kpis.lowStockItems.value}
+            value={kpiData.lowStockItems.value}
             icon={<Warning />}
-            change={mockData.kpis.lowStockItems.change}
-            trend={mockData.kpis.lowStockItems.trend}
+            change={kpiData.lowStockItems.change}
+            trend={kpiData.lowStockItems.trend}
           />
         </Grid>
         <Grid item xs={12} sm={6} md={4} lg={2}>
           <KPICard
             title="Total Value"
-            value={mockData.kpis.totalValue.value}
+            value={kpiData.totalValue.value}
             icon={<AttachMoney />}
-            change={mockData.kpis.totalValue.change}
-            trend={mockData.kpis.totalValue.trend}
+            change={kpiData.totalValue.change}
+            trend={kpiData.totalValue.trend}
             format="currency"
           />
         </Grid>
         <Grid item xs={12} sm={6} md={4} lg={2}>
           <KPICard
             title="Categories"
-            value={mockData.kpis.categories.value}
+            value={kpiData.categories.value}
             icon={<Category />}
-            change={mockData.kpis.categories.change}
-            trend={mockData.kpis.categories.trend}
+            change={kpiData.categories.change}
+            trend={kpiData.categories.trend}
           />
         </Grid>
         <Grid item xs={12} sm={6} md={4} lg={2}>
           <KPICard
             title="Monthly Orders"
-            value={mockData.kpis.monthlyOrders.value}
+            value={kpiData.monthlyOrders.value}
             icon={<ShoppingCart />}
-            change={mockData.kpis.monthlyOrders.change}
-            trend={mockData.kpis.monthlyOrders.trend}
+            change={kpiData.monthlyOrders.change}
+            trend={kpiData.monthlyOrders.trend}
           />
         </Grid>
         <Grid item xs={12} sm={6} md={4} lg={2}>
           <KPICard
             title="Reorder Points"
-            value={mockData.kpis.reorderPoints.value}
+            value={kpiData.reorderPoints.value}
             icon={<LocalShipping />}
-            change={mockData.kpis.reorderPoints.change}
-            trend={mockData.kpis.reorderPoints.trend}
+            change={kpiData.reorderPoints.change}
+            trend={kpiData.reorderPoints.trend}
           />
         </Grid>
       </Grid>
@@ -285,15 +352,15 @@ export default function Dashboard() {
 
       {/* Data Tables and Lists */}
       <Grid container spacing={3}>
-        {/* Top Products */}
+        {/* Top Products by Value */}
         <Grid item xs={12} lg={4}>
           <Paper elevation={2} sx={{ p: 3 }}>
             <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
-              Top Performing Products
+              Top Products by Value
             </Typography>
             <List>
-              {mockData.topProducts.map((product, index) => (
-                <React.Fragment key={product.name}>
+              {topProducts.map((product: Item, index: number) => (
+                <React.Fragment key={product.id}>
                   <ListItem sx={{ px: 0 }}>
                     <ListItemAvatar>
                       <Avatar sx={{ bgcolor: 'primary.light', color: 'primary.main' }}>
@@ -301,26 +368,31 @@ export default function Dashboard() {
                       </Avatar>
                     </ListItemAvatar>
                     <ListItemText
-                      primary={product.name}
+                      primary={product.name || product.title}
                       secondary={
                         <Stack direction="row" spacing={2} sx={{ mt: 1 }}>
                           <Typography variant="caption">
                             Stock: {product.stock}
                           </Typography>
                           <Typography variant="caption">
-                            Sales: {product.sales}
+                            Price: ${product.price.toFixed(2)}
                           </Typography>
                           <Typography variant="caption" color="success.main">
-                            ${product.value.toLocaleString()}
+                            Value: ${(product.price * product.stock).toLocaleString()}
                           </Typography>
                         </Stack>
                       }
                     />
                   </ListItem>
-                  {index < mockData.topProducts.length - 1 && <Divider />}
+                  {index < 4 && <Divider />}
                 </React.Fragment>
               ))}
             </List>
+            {topProducts.length === 0 && (
+              <Typography variant="body2" color="text.secondary" textAlign="center">
+                No products available
+              </Typography>
+            )}
           </Paper>
         </Grid>
 
@@ -331,42 +403,50 @@ export default function Dashboard() {
               Stock Alerts
             </Typography>
             <List>
-              {mockData.stockAlerts.map((alert, index) => (
-                <React.Fragment key={alert.product}>
-                  <ListItem sx={{ px: 0 }}>
-                    <ListItemAvatar>
-                      <Avatar sx={{ bgcolor: 'warning.light', color: 'warning.main' }}>
-                        <Warning />
-                      </Avatar>
-                    </ListItemAvatar>
-                    <ListItemText
-                      primary={alert.product}
-                      secondary={
-                        <Box sx={{ mt: 1 }}>
-                          <Typography variant="caption" display="block">
-                            Current: {alert.current} | Min: {alert.minimum}
-                          </Typography>
-                          <Box display="flex" alignItems="center" gap={1} sx={{ mt: 0.5 }}>
-                            <LinearProgress 
-                              variant="determinate" 
-                              value={(alert.current / alert.minimum) * 100}
-                              sx={{ flexGrow: 1, height: 6, borderRadius: 3 }}
-                              color={alert.current < alert.minimum ? 'error' : 'warning'}
-                            />
-                            <Chip 
-                              label={alert.category} 
-                              size="small" 
-                              variant="outlined"
-                            />
+              {dashboardData.lowStockItems.slice(0, 4).map((alert: Item, index: number) => {
+                const threshold = 10; // matching the threshold used in API call
+                return (
+                  <React.Fragment key={alert.id}>
+                    <ListItem sx={{ px: 0 }}>
+                      <ListItemAvatar>
+                        <Avatar sx={{ bgcolor: 'warning.light', color: 'warning.main' }}>
+                          <Warning />
+                        </Avatar>
+                      </ListItemAvatar>
+                      <ListItemText
+                        primary={alert.name || alert.title}
+                        secondary={
+                          <Box sx={{ mt: 1 }}>
+                            <Typography variant="caption" display="block">
+                              Current: {alert.stock} | Threshold: {threshold}
+                            </Typography>
+                            <Box display="flex" alignItems="center" gap={1} sx={{ mt: 0.5 }}>
+                              <LinearProgress 
+                                variant="determinate" 
+                                value={(alert.stock / threshold) * 100}
+                                sx={{ flexGrow: 1, height: 6, borderRadius: 3 }}
+                                color={alert.stock < threshold ? 'error' : 'warning'}
+                              />
+                              <Chip 
+                                label={alert.category || 'No category'} 
+                                size="small" 
+                                variant="outlined"
+                              />
+                            </Box>
                           </Box>
-                        </Box>
-                      }
-                    />
-                  </ListItem>
-                  {index < mockData.stockAlerts.length - 1 && <Divider />}
-                </React.Fragment>
-              ))}
+                        }
+                      />
+                    </ListItem>
+                    {index < Math.min(dashboardData.lowStockItems.length - 1, 3) && <Divider />}
+                  </React.Fragment>
+                );
+              })}
             </List>
+            {dashboardData.lowStockItems.length === 0 && (
+              <Typography variant="body2" color="success.main" textAlign="center">
+                No low stock alerts! All products are well stocked.
+              </Typography>
+            )}
           </Paper>
         </Grid>
 
@@ -377,7 +457,7 @@ export default function Dashboard() {
               Recent Activity
             </Typography>
             <List>
-              {mockData.recentActivity.map((activity, index) => (
+              {recentActivity.map((activity: any, index: number) => (
                 <React.Fragment key={index}>
                   <ListItem sx={{ px: 0 }}>
                     <ListItemAvatar>
@@ -403,7 +483,7 @@ export default function Dashboard() {
                       }
                     />
                   </ListItem>
-                  {index < mockData.recentActivity.length - 1 && <Divider />}
+                  {index < recentActivity.length - 1 && <Divider />}
                 </React.Fragment>
               ))}
             </List>

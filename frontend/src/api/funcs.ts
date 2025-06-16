@@ -340,3 +340,130 @@ export const getRoot = async (): Promise<any> => {
 
 // Export the productService as default for easier importing
 export default productService;
+
+// Dashboard-specific data aggregation functions
+export interface DashboardData {
+  totalProducts: number;
+  lowStockItems: Item[];
+  totalValue: number;
+  categories: string[];
+  allProducts: Item[];
+  distributors: string[];
+}
+
+export interface DashboardKPIs {
+  totalProducts: { value: number; change: number; trend: 'up' | 'down' | 'neutral' };
+  lowStockItems: { value: number; change: number; trend: 'up' | 'down' | 'neutral' };
+  totalValue: { value: number; change: number; trend: 'up' | 'down' | 'neutral' };
+  categories: { value: number; change: number; trend: 'up' | 'down' | 'neutral' };
+  monthlyOrders: { value: number; change: number; trend: 'up' | 'down' | 'neutral' };
+  reorderPoints: { value: number; change: number; trend: 'up' | 'down' | 'neutral' };
+}
+
+// Dashboard service for aggregated data
+export const dashboardService = {
+  // Get all dashboard data in a single call
+  async getDashboardData(lowStockThreshold: number = 10): Promise<DashboardData> {
+    try {
+      // Fetch all data in parallel for optimal performance
+      const [
+        allProducts,
+        categories,
+        distributors
+      ] = await Promise.all([
+        productService.getUserProducts(),
+        // Use fallback if getUserCategories requires userId but we want auth-based
+        apiClient.get('/api/categories').then(res => res.data.categories).catch(() => []),
+        apiClient.get('/api/distributors').then(res => res.data.distributors).catch(() => [])
+      ]);
+
+      // Filter low stock items from all products
+      const lowStockItems = allProducts.filter(product => product.stock <= lowStockThreshold);
+
+      // Calculate total inventory value
+      const totalValue = allProducts.reduce((sum, product) => {
+        return sum + (product.price * product.stock);
+      }, 0);
+
+      return {
+        totalProducts: allProducts.length,
+        lowStockItems,
+        totalValue,
+        categories,
+        allProducts,
+        distributors
+      };
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+      throw error;
+    }
+  },
+
+  // Get dashboard KPIs with calculated metrics
+  async getDashboardKPIs(lowStockThreshold: number = 10): Promise<DashboardKPIs> {
+    try {
+      const dashboardData = await this.getDashboardData(lowStockThreshold);
+
+      // For now, set trend changes to 0 since we don't have historical data
+      // In the future, this could compare with previous period data
+      return {
+        totalProducts: { value: dashboardData.totalProducts, change: 0, trend: 'neutral' },
+        lowStockItems: { value: dashboardData.lowStockItems.length, change: 0, trend: 'neutral' },
+        totalValue: { value: dashboardData.totalValue, change: 0, trend: 'neutral' },
+        categories: { value: dashboardData.categories.length, change: 0, trend: 'neutral' },
+        // Mock data for features not yet implemented
+        monthlyOrders: { value: 24, change: 12.5, trend: 'up' },
+        reorderPoints: { value: 8, change: 15.8, trend: 'up' }
+      };
+    } catch (error) {
+      console.error('Error calculating dashboard KPIs:', error);
+      throw error;
+    }
+  },
+
+  // Get top products by value (inventory value = price * stock)
+  async getTopProductsByValue(limit: number = 5): Promise<Item[]> {
+    try {
+      const allProducts = await productService.getUserProducts();
+      return allProducts
+        .sort((a, b) => (b.price * b.stock) - (a.price * a.stock))
+        .slice(0, limit);
+    } catch (error) {
+      console.error('Error fetching top products by value:', error);
+      throw error;
+    }
+  },
+
+  // Get stock distribution by category
+  async getStockDistributionByCategory(): Promise<{ [category: string]: { count: number; totalValue: number; totalStock: number } }> {
+    try {
+      const allProducts = await productService.getUserProducts();
+      const distribution: { [category: string]: { count: number; totalValue: number; totalStock: number } } = {};
+
+      allProducts.forEach(product => {
+        const category = product.category || 'Uncategorized';
+        if (!distribution[category]) {
+          distribution[category] = { count: 0, totalValue: 0, totalStock: 0 };
+        }
+        distribution[category].count += 1;
+        distribution[category].totalValue += product.price * product.stock;
+        distribution[category].totalStock += product.stock;
+      });
+
+      return distribution;
+    } catch (error) {
+      console.error('Error calculating stock distribution:', error);
+      throw error;
+    }
+  },
+
+  // Get mock recent activity (placeholder for future implementation)
+  getRecentActivity(): Array<{ action: string; item: string; time: string; type: string }> {
+    return [
+      { action: 'Stock Update', item: 'Low stock items refreshed', time: '5 min ago', type: 'update' },
+      { action: 'Data Sync', item: 'Real inventory data loaded', time: '1 hour ago', type: 'add' },
+      { action: 'Low Stock Alert', item: 'Check items below threshold', time: '2 hours ago', type: 'alert' },
+      { action: 'Categories Updated', item: 'Product categories synced', time: '3 hours ago', type: 'category' }
+    ];
+  }
+};
