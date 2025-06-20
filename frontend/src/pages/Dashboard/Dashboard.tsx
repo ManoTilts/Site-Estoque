@@ -375,10 +375,10 @@ export default function Dashboard() {
                             Stock: {product.stock}
                           </Typography>
                           <Typography variant="caption">
-                            Price: ${product.price.toFixed(2)}
+                            Price: ${(product.sell_price || product.purchase_price || 0).toFixed(2)}
                           </Typography>
                           <Typography variant="caption" color="success.main">
-                            Value: ${(product.price * product.stock).toLocaleString()}
+                            Value: ${((product.sell_price || product.purchase_price || 0) * product.stock).toLocaleString()}
                           </Typography>
                         </Stack>
                       }
@@ -404,7 +404,8 @@ export default function Dashboard() {
             </Typography>
             <List>
               {dashboardData.lowStockItems.slice(0, 4).map((alert: Item, index: number) => {
-                const threshold = 10; // matching the threshold used in API call
+                // Use the product's individual threshold, fallback to 10 if not set
+                const threshold = alert.low_stock_threshold || 10;
                 return (
                   <React.Fragment key={alert.id}>
                     <ListItem sx={{ px: 0 }}>
@@ -423,9 +424,9 @@ export default function Dashboard() {
                             <Box display="flex" alignItems="center" gap={1} sx={{ mt: 0.5 }}>
                               <LinearProgress 
                                 variant="determinate" 
-                                value={(alert.stock / threshold) * 100}
+                                value={Math.min((alert.stock / threshold) * 100, 100)}
                                 sx={{ flexGrow: 1, height: 6, borderRadius: 3 }}
-                                color={alert.stock < threshold ? 'error' : 'warning'}
+                                color={alert.stock <= threshold ? 'error' : 'warning'}
                               />
                               <Chip 
                                 label={alert.category || 'No category'} 

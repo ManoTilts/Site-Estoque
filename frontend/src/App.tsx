@@ -5,6 +5,8 @@ import SignUp from './pages/Login/Sign-Up/SignUp'
 import HomePage from './pages/Home/HomePage'
 import Profile from './pages/Profile/Profile'
 import Dashboard from './pages/Dashboard/Dashboard'
+import ManageProduct from './pages/ManageProduct/ManageProduct'
+import StockTransactions from './pages/StockTransactions/StockTransactions'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 
 // Protected Route Component
@@ -47,6 +49,22 @@ function AppRoutes() {
           </ProtectedRoute>
         } 
       />
+              <Route 
+          path="/manage-product/:productId" 
+          element={
+            <ProtectedRoute>
+              <ManageProduct />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/stock-transactions" 
+          element={
+            <ProtectedRoute>
+              <StockTransactions />
+            </ProtectedRoute>
+          } 
+        />
       {/* For development, allow direct access to pages without auth check */}
       <Route path="/home-dev" element={<HomePage />} />
       <Route path="/profile-dev" element={<Profile />} />

@@ -189,16 +189,31 @@ class ItemService:
         return await collection.count_documents({"associatedUser": user_id})
 
     @staticmethod
-    async def get_low_stock_items(user_id: str, threshold: int = 10) -> List[Dict]:
+    async def get_low_stock_items(user_id: str, default_threshold: int = 10) -> List[Dict]:
         """
-        Get items with low stock for a user (uses compound index)
+        Get items with low stock for a user based on each item's personal threshold or default
         """
         collection = ItemService.get_collection()
-        cursor = collection.find({
-            "associatedUser": user_id,
-            "stock": {"$lte": threshold}
-        }).sort("stock", 1)  # Sort by stock ascending
         
+        # Use aggregation pipeline to compare stock with each item's threshold
+        pipeline = [
+            {"$match": {"associatedUser": user_id}},
+            {
+                "$addFields": {
+                    "effective_threshold": {
+                        "$ifNull": ["$low_stock_threshold", default_threshold]
+                    }
+                }
+            },
+            {
+                "$match": {
+                    "$expr": {"$lte": ["$stock", "$effective_threshold"]}
+                }
+            },
+            {"$sort": {"stock": 1}}  # Sort by stock ascending
+        ]
+        
+        cursor = collection.aggregate(pipeline)
         return await cursor.to_list(length=None)
 
     @staticmethod
@@ -210,7 +225,159 @@ class ItemService:
 
     @staticmethod
     async def get_distributors_for_user(user_id: str) -> List[str]:
-        """Get distinct distributors for a user"""
+        """
+        Get unique distributors for a user (uses compound index)
+        """
         collection = ItemService.get_collection()
         distributors = await collection.distinct("distributer", {"associatedUser": user_id})
-        return [dist for dist in distributors if dist]  # Filter out None/empty values
+        return distributors
+
+class StockTransactionService:
+    @staticmethod
+    def get_collection() -> AsyncIOMotorCollection:
+        """Get stock transactions collection"""
+        db = get_database()
+        return db.stock_transactions
+
+    @staticmethod
+    async def create_transaction(transaction_data: Dict) -> Dict:
+        """Create new stock transaction and update item stock"""
+        collection = StockTransactionService.get_collection()
+        item_collection = ItemService.get_collection()
+        
+        # Add timestamps
+        now = datetime.datetime.utcnow()
+        transaction_data["created_at"] = now
+        transaction_data["updated_at"] = now
+        
+        # Insert transaction
+        result = await collection.insert_one(transaction_data)
+        
+        # Update item stock (subtract quantity for loss, damage, return)
+        item_id = transaction_data["item_id"]
+        quantity = transaction_data["quantity"]
+        
+        await item_collection.update_one(
+            {"_id": ObjectId(item_id)},
+            {
+                "$inc": {"stock": -quantity},
+                "$set": {"updated_at": now}
+            }
+        )
+        
+        # Return the created transaction
+        return await collection.find_one({"_id": result.inserted_id})
+
+    @staticmethod
+    async def get_transactions(
+        user_id: str,
+        transaction_type: Optional[str] = None,
+        item_id: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Dict]:
+        """Get transactions for a user with optional filters"""
+        collection = StockTransactionService.get_collection()
+        
+        # Build query
+        query = {"associated_user": user_id}
+        
+        if transaction_type:
+            query["transaction_type"] = transaction_type
+            
+        if item_id:
+            query["item_id"] = item_id
+        
+        cursor = collection.find(query).sort("created_at", -1).skip(skip).limit(limit)
+        return await cursor.to_list(length=limit)
+
+    @staticmethod
+    async def get_transaction_count(
+        user_id: str,
+        transaction_type: Optional[str] = None,
+        item_id: Optional[str] = None
+    ) -> int:
+        """Get count of transactions for a user with optional filters"""
+        collection = StockTransactionService.get_collection()
+        
+        # Build query
+        query = {"associated_user": user_id}
+        
+        if transaction_type:
+            query["transaction_type"] = transaction_type
+            
+        if item_id:
+            query["item_id"] = item_id
+        
+        return await collection.count_documents(query)
+
+    @staticmethod
+    async def get_transaction_by_id(transaction_id: str) -> Optional[Dict]:
+        """Get transaction by ID"""
+        if not ObjectId.is_valid(transaction_id):
+            return None
+        
+        collection = StockTransactionService.get_collection()
+        return await collection.find_one({"_id": ObjectId(transaction_id)})
+
+    @staticmethod
+    async def update_transaction(transaction_id: str, transaction_data: Dict) -> Optional[Dict]:
+        """Update transaction (only certain fields can be updated)"""
+        if not ObjectId.is_valid(transaction_id):
+            return None
+        
+        collection = StockTransactionService.get_collection()
+        
+        # Add update timestamp
+        transaction_data["updated_at"] = datetime.datetime.utcnow()
+        
+        result = await collection.find_one_and_update(
+            {"_id": ObjectId(transaction_id)},
+            {"$set": transaction_data},
+            return_document=True
+        )
+        
+        return result
+
+    @staticmethod
+    async def get_transaction_stats(user_id: str) -> Dict:
+        """Get transaction statistics for a user"""
+        collection = StockTransactionService.get_collection()
+        
+        # Aggregate statistics
+        pipeline = [
+            {"$match": {"associated_user": user_id}},
+            {
+                "$group": {
+                    "_id": "$transaction_type",
+                    "total_quantity": {"$sum": "$quantity"},
+                    "total_cost_impact": {"$sum": "$cost_impact"},
+                    "count": {"$sum": 1}
+                }
+            }
+        ]
+        
+        results = await collection.aggregate(pipeline).to_list(length=None)
+        
+        # Format results
+        stats = {
+            "loss": {"quantity": 0, "cost": 0, "count": 0},
+            "damage": {"quantity": 0, "cost": 0, "count": 0},
+            "return": {"quantity": 0, "cost": 0, "count": 0},
+            "total": {"quantity": 0, "cost": 0, "count": 0}
+        }
+        
+        for result in results:
+            transaction_type = result["_id"]
+            if transaction_type in stats:
+                stats[transaction_type] = {
+                    "quantity": result["total_quantity"],
+                    "cost": result["total_cost_impact"] or 0,
+                    "count": result["count"]
+                }
+                # Add to total
+                stats["total"]["quantity"] += result["total_quantity"]
+                stats["total"]["cost"] += result["total_cost_impact"] or 0
+                stats["total"]["count"] += result["count"]
+        
+        return stats

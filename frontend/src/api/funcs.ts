@@ -10,10 +10,14 @@ export interface Item {
   distributer: string;
   unit?: string;
   stock: number;
-  price: number;
+  low_stock_threshold?: number;  // Threshold personalizado para alerta de estoque baixo
+  purchase_price?: number;  // Preço de compra
+  sell_price?: number;      // Preço de venda
   barcode?: string;
   image?: string;
   associatedUser: string;  // Note: backend uses 'associatedUser' not 'associatedUsers'
+  created_at?: string;
+  updated_at?: string;
 }
 
 // Create item payload interface for backend
@@ -24,7 +28,9 @@ interface CreateItemPayload {
   distributer: string;
   unit?: string;
   stock: number;
-  price: number;
+  low_stock_threshold?: number;
+  purchase_price?: number;
+  sell_price?: number;
   image?: string;
   associatedUser: string;
 }
@@ -134,10 +140,10 @@ export const productService = {
   },
 
   // Get low stock items
-  async getLowStockItems(userId: string, threshold: number = 10): Promise<Item[]> {
+  async getLowStockItems(userId: string, defaultThreshold: number = 10): Promise<Item[]> {
     try {
       const response = await apiClient.get(`/api/users/${userId}/items/low-stock`, {
-        params: { threshold }
+        params: { default_threshold: defaultThreshold }
       });
       return response.data.map((item: any) => ({
         ...item,
@@ -198,6 +204,111 @@ export const productService = {
     }
   },
 
+  // Generate QR code for an item
+  async generateItemQRCode(itemId: string): Promise<{
+    item_id: string;
+    barcode?: string;
+    qr_code: string;
+    title?: string;
+    description?: string;
+  }> {
+    try {
+      const response = await apiClient.get(`/api/items/${itemId}/qrcode`);
+      return response.data;
+    } catch (error) {
+      console.error('Error generating QR code for item:', error);
+      throw error;
+    }
+  },
+
+  // Generate QR code for a barcode
+  async generateBarcodeQRCode(barcode: string): Promise<{
+    barcode: string;
+    qr_code: string;
+  }> {
+    try {
+      const response = await apiClient.get(`/api/items/barcode/${barcode}/qrcode`);
+      return response.data;
+    } catch (error) {
+      console.error('Error generating QR code for barcode:', error);
+      throw error;
+    }
+  },
+
+  // Process scanned QR code
+  async processQRScan(qrData: string): Promise<{
+    type: 'product' | 'barcode' | 'unknown';
+    item?: Item;
+    data?: string;
+    message: string;
+  }> {
+    try {
+      const response = await apiClient.post('/api/items/qr-scan', {
+        qr_data: qrData
+      });
+      
+      // Convert item data if present
+      if (response.data.item) {
+        response.data.item = {
+          ...response.data.item,
+          name: response.data.item.title,
+          id: response.data.item.id || response.data.item._id || String(response.data.item._id)
+        };
+      }
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error processing QR scan:', error);
+      throw error;
+    }
+  },
+
+  // Create item from QR scan
+  async createItemFromQR(itemData: {
+    title: string;
+    description?: string;
+    category?: string;
+    distributer: string;
+    unit?: string;
+    stock: number;
+    low_stock_threshold?: number;
+    purchase_price?: number;
+    sell_price?: number;
+    image?: string;
+    barcode?: string;
+  }, qrData?: string): Promise<Item> {
+    try {
+      const payload = {
+        title: itemData.title,
+        description: itemData.description,
+        category: itemData.category,
+        distributer: itemData.distributer,
+        unit: itemData.unit,
+        stock: itemData.stock,
+        low_stock_threshold: itemData.low_stock_threshold,
+        purchase_price: itemData.purchase_price,
+        sell_price: itemData.sell_price,
+        image: itemData.image,
+        barcode: itemData.barcode,
+        associatedUser: '' // This will be set by the backend
+      };
+
+      const response = await apiClient.post('/api/items/create-from-qr', {
+        ...payload,
+        qr_data: qrData
+      });
+
+      return {
+        ...response.data,
+        name: response.data.title,
+        id: response.data.id || response.data._id || String(response.data._id)
+      };
+    } catch (error) {
+      console.error('Error creating item from QR:', error);
+      throw error;
+    }
+  },
+
   // Get a single item by ID
   async getProduct(itemId: string): Promise<Item> {
     try {
@@ -213,7 +324,7 @@ export const productService = {
     }
   },
 
-  // Create a new item for a user
+  // Create a new item
   async createProduct(itemData: {
     name: string;
     description?: string;
@@ -221,7 +332,9 @@ export const productService = {
     distributer: string;
     unit?: string;
     stock: number;
-    price: number;
+    low_stock_threshold?: number;
+    purchase_price?: number;
+    sell_price?: number;
     image?: string;
   }): Promise<Item> {
     try {
@@ -233,7 +346,9 @@ export const productService = {
         distributer: itemData.distributer,
         unit: itemData.unit,
         stock: itemData.stock,
-        price: itemData.price,
+        low_stock_threshold: itemData.low_stock_threshold,
+        purchase_price: itemData.purchase_price,
+        sell_price: itemData.sell_price,
         image: itemData.image,
         associatedUser: ''  // This will be set by the backend from JWT token
       };
@@ -368,21 +483,28 @@ export const dashboardService = {
       // Fetch all data in parallel for optimal performance
       const [
         allProducts,
+        lowStockItems,
         categories,
         distributors
       ] = await Promise.all([
         productService.getUserProducts(),
+        // Use the backend low stock endpoint that respects individual thresholds
+        apiClient.get('/api/items/low-stock', {
+          params: { default_threshold: lowStockThreshold }
+        }).then(res => res.data.map((item: any) => ({
+          ...item,
+          name: item.title,
+          id: item.id || item._id || String(item._id)
+        }))),
         // Use fallback if getUserCategories requires userId but we want auth-based
         apiClient.get('/api/categories').then(res => res.data.categories).catch(() => []),
         apiClient.get('/api/distributors').then(res => res.data.distributors).catch(() => [])
       ]);
 
-      // Filter low stock items from all products
-      const lowStockItems = allProducts.filter(product => product.stock <= lowStockThreshold);
-
       // Calculate total inventory value
       const totalValue = allProducts.reduce((sum, product) => {
-        return sum + (product.price * product.stock);
+        const price = product.sell_price || product.purchase_price || 0;
+        return sum + (price * product.stock);
       }, 0);
 
       return {
@@ -426,7 +548,11 @@ export const dashboardService = {
     try {
       const allProducts = await productService.getUserProducts();
       return allProducts
-        .sort((a, b) => (b.price * b.stock) - (a.price * a.stock))
+        .sort((a, b) => {
+          const aPrice = a.sell_price || a.purchase_price || 0;
+          const bPrice = b.sell_price || b.purchase_price || 0;
+          return (bPrice * b.stock) - (aPrice * a.stock);
+        })
         .slice(0, limit);
     } catch (error) {
       console.error('Error fetching top products by value:', error);
@@ -446,7 +572,8 @@ export const dashboardService = {
           distribution[category] = { count: 0, totalValue: 0, totalStock: 0 };
         }
         distribution[category].count += 1;
-        distribution[category].totalValue += product.price * product.stock;
+        const price = product.sell_price || product.purchase_price || 0;
+        distribution[category].totalValue += price * product.stock;
         distribution[category].totalStock += product.stock;
       });
 
@@ -465,5 +592,148 @@ export const dashboardService = {
       { action: 'Low Stock Alert', item: 'Check items below threshold', time: '2 hours ago', type: 'alert' },
       { action: 'Categories Updated', item: 'Product categories synced', time: '3 hours ago', type: 'category' }
     ];
+  }
+};
+
+// Stock Transaction Types and Interfaces
+export enum StockTransactionType {
+  LOSS = "loss",
+  DAMAGE = "damage", 
+  RETURN = "return"
+}
+
+export interface StockTransaction {
+  id: string;
+  item_id: string;
+  transaction_type: StockTransactionType;
+  quantity: number;
+  reason: string;
+  notes?: string;
+  cost_impact?: number;
+  reference_number?: string;
+  associated_user: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface CreateStockTransactionData {
+  item_id: string;
+  transaction_type: StockTransactionType;
+  quantity: number;
+  reason: string;
+  notes?: string;
+  cost_impact?: number;
+  reference_number?: string;
+}
+
+export interface UpdateStockTransactionData {
+  reason?: string;
+  notes?: string;
+  cost_impact?: number;
+  reference_number?: string;
+}
+
+export interface StockTransactionStats {
+  loss: { quantity: number; cost: number; count: number };
+  damage: { quantity: number; cost: number; count: number };
+  return: { quantity: number; cost: number; count: number };
+  total: { quantity: number; cost: number; count: number };
+}
+
+export interface StockTransactionResponse {
+  transactions: StockTransaction[];
+  total_count: number;
+}
+
+// Stock Transaction Service
+export const stockTransactionService = {
+  // Create new stock transaction
+  async createTransaction(data: CreateStockTransactionData): Promise<StockTransaction> {
+    try {
+      const response = await apiClient.post('/api/stock-transactions/', data);
+      return response.data;
+    } catch (error) {
+      console.error('Error creating stock transaction:', error);
+      throw error;
+    }
+  },
+
+  // Get transactions with filtering and pagination
+  async getTransactions(
+    transactionType?: StockTransactionType,
+    itemId?: string,
+    skip: number = 0,
+    limit: number = 100
+  ): Promise<StockTransactionResponse> {
+    try {
+      const params: any = { skip, limit };
+      
+      if (transactionType) {
+        params.transaction_type = transactionType;
+      }
+      
+      if (itemId) {
+        params.item_id = itemId;
+      }
+
+      const [transactionsResponse, countResponse] = await Promise.all([
+        apiClient.get('/api/stock-transactions/', { params }),
+        apiClient.get('/api/stock-transactions/count', { params: { 
+          transaction_type: transactionType,
+          item_id: itemId 
+        }})
+      ]);
+
+      return {
+        transactions: transactionsResponse.data,
+        total_count: countResponse.data.count
+      };
+    } catch (error) {
+      console.error('Error fetching stock transactions:', error);
+      throw error;
+    }
+  },
+
+  // Get transaction statistics
+  async getTransactionStats(): Promise<StockTransactionStats> {
+    try {
+      const response = await apiClient.get('/api/stock-transactions/stats');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching transaction stats:', error);
+      throw error;
+    }
+  },
+
+  // Get specific transaction
+  async getTransaction(transactionId: string): Promise<StockTransaction> {
+    try {
+      const response = await apiClient.get(`/api/stock-transactions/${transactionId}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching transaction:', error);
+      throw error;
+    }
+  },
+
+  // Update transaction
+  async updateTransaction(transactionId: string, data: UpdateStockTransactionData): Promise<StockTransaction> {
+    try {
+      const response = await apiClient.put(`/api/stock-transactions/${transactionId}`, data);
+      return response.data;
+    } catch (error) {
+      console.error('Error updating transaction:', error);
+      throw error;
+    }
+  },
+
+  // Get transactions for specific item
+  async getItemTransactions(itemId: string, skip: number = 0, limit: number = 100): Promise<StockTransactionResponse> {
+    return this.getTransactions(undefined, itemId, skip, limit);
+  },
+
+  // Get transactions by type
+  async getTransactionsByType(type: StockTransactionType, skip: number = 0, limit: number = 100): Promise<StockTransactionResponse> {
+    return this.getTransactions(type, undefined, skip, limit);
   }
 };

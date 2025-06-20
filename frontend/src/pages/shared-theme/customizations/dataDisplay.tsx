@@ -15,12 +15,13 @@ export const dataDisplayCustomizations = {
         display: 'flex',
         flexDirection: 'column',
         gap: 0,
+        variants: [],
       },
     },
   },
   MuiListItem: {
     styleOverrides: {
-      root: ({ theme }) => ({
+      root: ({ theme }: { theme: any }) => ({
         [`& .${svgIconClasses.root}`]: {
           width: '1rem',
           height: '1rem',
@@ -57,12 +58,12 @@ export const dataDisplayCustomizations = {
   },
   MuiListItemText: {
     styleOverrides: {
-      primary: ({ theme }) => ({
+      primary: ({ theme }: { theme: any }) => ({
         fontSize: theme.typography.body2.fontSize,
         fontWeight: 500,
         lineHeight: theme.typography.body2.lineHeight,
       }),
-      secondary: ({ theme }) => ({
+      secondary: ({ theme }: { theme: any }) => ({
         fontSize: theme.typography.caption.fontSize,
         lineHeight: theme.typography.caption.lineHeight,
       }),
@@ -70,7 +71,7 @@ export const dataDisplayCustomizations = {
   },
   MuiListSubheader: {
     styleOverrides: {
-      root: ({ theme }) => ({
+      root: ({ theme }: { theme: any }) => ({
         backgroundColor: 'transparent',
         padding: '4px 8px',
         fontSize: theme.typography.caption.fontSize,
@@ -88,10 +89,10 @@ export const dataDisplayCustomizations = {
   },
   MuiChip: {
     defaultProps: {
-      size: 'small',
+      size: 'small' as const,
     },
     styleOverrides: {
-      root: ({ theme }) => ({
+      root: ({ theme }: { theme: any }) => ({
         border: '1px solid',
         borderRadius: '999px',
         [`& .${chipClasses.label}`]: {
@@ -213,7 +214,7 @@ export const dataDisplayCustomizations = {
   },
   MuiIcon: {
     defaultProps: {
-      fontSize: 'small',
+      fontSize: 'small' as const,
     },
     styleOverrides: {
       root: {

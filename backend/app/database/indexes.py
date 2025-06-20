@@ -7,6 +7,7 @@ for the product inventory application.
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 import asyncio
+from pymongo import IndexModel, TEXT, ASCENDING, DESCENDING
 
 async def create_indexes(db: AsyncIOMotorDatabase):
     """
@@ -29,7 +30,8 @@ async def create_indexes(db: AsyncIOMotorDatabase):
             ([("associatedUser", 1), ("title", 1)], {}),
             ([("title", "text"), ("description", "text")], {}),
             ("barcode", {"unique": True, "sparse": True}),
-            ([("associatedUser", 1), ("price", 1)], {}),
+            ([("associatedUser", 1), ("purchase_price", 1)], {}),
+            ([("associatedUser", 1), ("sell_price", 1)], {}),
             ([("associatedUser", 1), ("stock", 1)], {}),
             ([("associatedUser", 1), ("category", 1)], {}),
             ("created_at", {}),
@@ -180,7 +182,8 @@ INDEX_BENEFITS = {
     "associatedUser + title": "Optimizes search within user's inventory",
     "text search": "Enables fast full-text search across title and description",
     "barcode unique": "Ensures barcode uniqueness and fast barcode lookups",
-    "associatedUser + price": "Optimizes price-based sorting for users",
+    "associatedUser + purchase_price": "Optimizes purchase price-based sorting for users",
+    "associatedUser + sell_price": "Optimizes sell price-based sorting for users",
     "associatedUser + stock": "Optimizes stock-based sorting and low-stock alerts",
     "associatedUser + category": "Speeds up category filtering within user inventory",
     "created_at (items)": "Optimizes date-based queries and recent products",
@@ -208,4 +211,86 @@ def explain_indexes():
     print("• Text indexes enable $text search queries")
     print("• Sparse indexes ignore null values")
     print("• Monitor index usage with index stats")
-    print("• Consider index size vs query performance trade-offs") 
+    print("• Consider index size vs query performance trade-offs")
+
+async def create_indexes(db: AsyncIOMotorDatabase):
+    """Create database indexes for better performance"""
+    
+    # Items collection indexes
+    items_collection = db.items
+    
+    # Create indexes for items collection
+    items_indexes = [
+        # Basic indexes
+        IndexModel([("associatedUser", ASCENDING)], name="associatedUser_1"),
+        IndexModel([("barcode", ASCENDING)], unique=True, name="barcode_1_unique"),
+        IndexModel([("created_at", DESCENDING)], name="created_at_-1"),
+        
+        # Compound indexes for efficient queries
+        IndexModel([("associatedUser", ASCENDING), ("category", ASCENDING)], name="user_category_1"),
+        IndexModel([("associatedUser", ASCENDING), ("distributer", ASCENDING)], name="user_distributer_1"),
+        IndexModel([("associatedUser", ASCENDING), ("stock", ASCENDING)], name="user_stock_1"),
+        IndexModel([("associatedUser", ASCENDING), ("title", ASCENDING)], name="user_title_1"),
+        IndexModel([("associatedUser", ASCENDING), ("created_at", DESCENDING)], name="user_created_-1"),
+        
+        # For low stock queries
+        IndexModel([("associatedUser", ASCENDING), ("stock", ASCENDING), ("low_stock_threshold", ASCENDING)], name="user_low_stock"),
+        
+        # Text search index
+        IndexModel([("title", TEXT), ("description", TEXT)], name="text_search")
+    ]
+    
+    await items_collection.create_indexes(items_indexes)
+    
+    # Stock transactions collection indexes
+    stock_transactions_collection = db.stock_transactions
+    
+    # Create indexes for stock transactions collection
+    stock_transactions_indexes = [
+        # Basic indexes
+        IndexModel([("associated_user", ASCENDING)], name="associated_user_1"),
+        IndexModel([("item_id", ASCENDING)], name="item_id_1"),
+        IndexModel([("transaction_type", ASCENDING)], name="transaction_type_1"),
+        IndexModel([("created_at", DESCENDING)], name="created_at_-1"),
+        
+        # Compound indexes for efficient queries
+        IndexModel([("associated_user", ASCENDING), ("transaction_type", ASCENDING)], name="user_type_1"),
+        IndexModel([("associated_user", ASCENDING), ("item_id", ASCENDING)], name="user_item_1"),
+        IndexModel([("associated_user", ASCENDING), ("created_at", DESCENDING)], name="user_created_-1"),
+        IndexModel([("item_id", ASCENDING), ("created_at", DESCENDING)], name="item_created_-1"),
+        
+        # For transaction statistics
+        IndexModel([("associated_user", ASCENDING), ("transaction_type", ASCENDING), ("created_at", DESCENDING)], name="user_type_created_-1"),
+    ]
+    
+    await stock_transactions_collection.create_indexes(stock_transactions_indexes)
+    
+    print("All database indexes created successfully!")
+
+async def drop_indexes(db: AsyncIOMotorDatabase):
+    """Drop all custom indexes (useful for development)"""
+    
+    # Drop items indexes
+    items_collection = db.items
+    await items_collection.drop_indexes()
+    
+    # Drop stock transactions indexes  
+    stock_transactions_collection = db.stock_transactions
+    await stock_transactions_collection.drop_indexes()
+    
+    print("All custom indexes dropped!")
+
+async def list_indexes(db: AsyncIOMotorDatabase):
+    """List all indexes for debugging"""
+    
+    print("Items collection indexes:")
+    items_collection = db.items
+    items_indexes = await items_collection.list_indexes().to_list(length=None)
+    for index in items_indexes:
+        print(f"  {index}")
+    
+    print("\nStock transactions collection indexes:")
+    stock_transactions_collection = db.stock_transactions
+    st_indexes = await stock_transactions_collection.list_indexes().to_list(length=None)
+    for index in st_indexes:
+        print(f"  {index}") 

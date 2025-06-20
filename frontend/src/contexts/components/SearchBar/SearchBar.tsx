@@ -25,7 +25,9 @@ import {
   Step,
   StepLabel,
   StepContent,
-  LinearProgress
+  LinearProgress,
+  Alert,
+  Snackbar
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import SearchIcon from '@mui/icons-material/Search';
@@ -34,6 +36,10 @@ import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
 import InfoIcon from '@mui/icons-material/Info';
 import InventoryIcon from '@mui/icons-material/Inventory';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
+import QrCodeScannerIcon from '@mui/icons-material/QrCodeScanner';
+import QrCodeIcon from '@mui/icons-material/QrCode';
+import { productService } from '../../../api/funcs';
+import QRScanner from '../QRScanner/QRScanner';
 
 export interface CardFormData {
   title: string;
@@ -42,7 +48,9 @@ export interface CardFormData {
   distributer: string;
   unit: string;
   stock: number;
-  price: number;
+  low_stock_threshold?: number;
+  purchase_price: number;
+  sell_price: number;
   image: string;
 }
 
@@ -92,9 +100,17 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, onSort, onAddCard }) =>
     distributer: '',
     unit: '',
     stock: 0,
-    price: 0,
+    low_stock_threshold: 10,
+    purchase_price: 0,
+    sell_price: 0,
     image: ''
   });
+
+  // QR Code scanner states
+  const [qrScannerOpen, setQrScannerOpen] = useState(false);
+  const [qrCodeResult, setQrCodeResult] = useState<string>('');
+  const [qrProcessing, setQrProcessing] = useState(false);
+  const [qrAlert, setQrAlert] = useState<{ message: string; severity: 'success' | 'error' | 'info' | 'warning' } | null>(null);
 
   // Helper function to validate URL - defined early to avoid hoisting issues
   const isValidUrl = (url: string): boolean => {
@@ -145,6 +161,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, onSort, onAddCard }) =>
     setActiveStep(0);
     setFormErrors({});
     setImagePreview('');
+    setQrCodeResult(''); // Clear QR code result
     // Reset form
     setFormData({
       title: '',
@@ -153,7 +170,9 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, onSort, onAddCard }) =>
       distributer: '',
       unit: '',
       stock: 0,
-      price: 0,
+      low_stock_threshold: 10,
+      purchase_price: 0,
+      sell_price: 0,
       image: ''
     });
   };
@@ -180,10 +199,16 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, onSort, onAddCard }) =>
         if (formData.stock < 0) {
           errors.stock = 'Stock cannot be negative';
         }
+        if (formData.low_stock_threshold !== undefined && formData.low_stock_threshold < 0) {
+          errors.low_stock_threshold = 'Threshold cannot be negative';
+        }
         break;
       case 2:
-        if (formData.price < 0) {
-          errors.price = 'Price cannot be negative';
+        if (formData.purchase_price < 0) {
+          errors.purchase_price = 'Purchase price cannot be negative';
+        }
+        if (formData.sell_price < 0) {
+          errors.sell_price = 'Sell price cannot be negative';
         }
         if (formData.image && !isValidUrl(formData.image)) {
           errors.image = 'Please enter a valid URL';
@@ -221,7 +246,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, onSort, onAddCard }) =>
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: name === 'stock' || name === 'price' ? Number(value) : value
+      [name]: name === 'stock' || name === 'low_stock_threshold' || name === 'purchase_price' || name === 'sell_price' ? Number(value) : value
     }));
     
     // Clear error when user starts typing
@@ -255,10 +280,99 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, onSort, onAddCard }) =>
     }
   };
 
-  const handleSubmit = () => {
+  // QR Code handlers
+  const handleQRScan = async (qrData: string) => {
+    setQrProcessing(true);
+    setQrCodeResult(qrData);
+    
+    try {
+      const result = await productService.processQRScan(qrData);
+      
+      if (result.type === 'product' || result.type === 'barcode') {
+        // Product found, show success message
+        setQrAlert({
+          message: result.message,
+          severity: 'success'
+        });
+        
+        // Could navigate to product details or show product info
+        console.log('Product found:', result.item);
+        
+        // You might want to call a callback to handle the found product
+        // onProductFound?.(result.item);
+        
+      } else {
+        // Unknown QR code, offer to create new product
+        setQrAlert({
+          message: result.message,
+          severity: 'info'
+        });
+        
+        // Pre-fill form with QR data if it's a barcode
+        if (qrData && qrData.length > 0) {
+          setFormData(prev => ({
+            ...prev,
+            title: `Produto ${qrData}`,
+            description: `Produto escaneado via QR Code: ${qrData}`
+          }));
+          
+          // Open create product dialog
+          setIsDialogOpen(true);
+        }
+      }
+    } catch (error) {
+      console.error('Error processing QR scan:', error);
+      setQrAlert({
+        message: 'Erro ao processar QR Code. Tente novamente.',
+        severity: 'error'
+      });
+    } finally {
+      setQrProcessing(false);
+    }
+  };
+
+  const handleQRScannerClose = () => {
+    setQrScannerOpen(false);
+    setQrCodeResult('');
+  };
+
+  const handleSubmit = async () => {
     if (validateStep(2)) {
-      onAddCard(formData);
-      handleCloseDialog();
+      try {
+        // If we have QR code data, use the QR-specific creation endpoint
+        if (qrCodeResult) {
+          await productService.createItemFromQR(
+            {
+              title: formData.title,
+              description: formData.description,
+              category: formData.category,
+              distributer: formData.distributer,
+              unit: formData.unit,
+              stock: formData.stock,
+              low_stock_threshold: formData.low_stock_threshold,
+              purchase_price: formData.purchase_price,
+              sell_price: formData.sell_price,
+              image: formData.image
+            },
+            qrCodeResult
+          );
+        } else {
+          // Regular product creation
+          await onAddCard(formData);
+        }
+        
+        handleCloseDialog();
+        setQrAlert({
+          message: 'Produto criado com sucesso!',
+          severity: 'success'
+        });
+      } catch (error) {
+        console.error('Error creating product:', error);
+        setQrAlert({
+          message: 'Erro ao criar produto. Tente novamente.',
+          severity: 'error'
+        });
+      }
     }
   };
 
@@ -280,7 +394,8 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, onSort, onAddCard }) =>
            formData.distributer.trim() !== '' && 
            formData.unit.trim() !== '' &&
            formData.stock >= 0 &&
-           formData.price >= 0 &&
+           formData.purchase_price >= 0 &&
+           formData.sell_price >= 0 &&
            allErrors.length === 0;
   };
 
@@ -406,6 +521,21 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, onSort, onAddCard }) =>
                   </Grid>
 
                   <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Low Stock Threshold"
+                      name="low_stock_threshold"
+                      type="number"
+                      value={formData.low_stock_threshold || 10}
+                      onChange={handleFormChange}
+                      variant="outlined"
+                      error={!!formErrors.low_stock_threshold}
+                      helperText="Alert when stock reaches this level"
+                      inputProps={{ min: 0 }}
+                    />
+                  </Grid>
+
+                  <Grid item xs={12} sm={6}>
                     <Autocomplete
                       freeSolo
                       options={allUnits}
@@ -447,15 +577,14 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, onSort, onAddCard }) =>
                   <Grid item xs={12} sm={6}>
                     <TextField
                       fullWidth
-                      label="Price per Unit"
-                      name="price"
+                      label="Purchase Price"
+                      name="purchase_price"
                       type="number"
-                      value={formData.price}
+                      value={formData.purchase_price}
                       onChange={handleFormChange}
                       variant="outlined"
-                      required
-                      error={!!formErrors.price}
-                      helperText={formErrors.price || "Price in your local currency"}
+                      error={!!formErrors.purchase_price}
+                      helperText={formErrors.purchase_price || "Cost per unit"}
                       inputProps={{ min: 0, step: 0.01 }}
                       InputProps={{
                         startAdornment: (
@@ -468,12 +597,45 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, onSort, onAddCard }) =>
                   </Grid>
 
                   <Grid item xs={12} sm={6}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+                    <TextField
+                      fullWidth
+                      label="Sell Price"
+                      name="sell_price"
+                      type="number"
+                      value={formData.sell_price}
+                      onChange={handleFormChange}
+                      variant="outlined"
+                      error={!!formErrors.sell_price}
+                      helperText={formErrors.sell_price || "Sale price per unit"}
+                      inputProps={{ min: 0, step: 0.01 }}
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <AttachMoneyIcon color="action" />
+                          </InputAdornment>
+                        ),
+                      }}
+                    />
+                  </Grid>
+
+                  <Grid item xs={12}>
+                    <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
                       <Chip 
-                        label={`Total Value: $${(formData.price * formData.stock).toFixed(2)}`}
+                        label={`Margin: ${formData.purchase_price > 0 && formData.sell_price > 0 ? 
+                          (((formData.sell_price - formData.purchase_price) / formData.purchase_price) * 100).toFixed(2) + '%' : 
+                          '0%'}`}
                         color="primary"
                         variant="outlined"
-                        sx={{ fontSize: '1rem', p: 2 }}
+                      />
+                      <Chip 
+                        label={`Profit per unit: $${Math.max(0, formData.sell_price - formData.purchase_price).toFixed(2)}`}
+                        color="success"
+                        variant="outlined"
+                      />
+                      <Chip 
+                        label={`Total Investment: $${(formData.purchase_price * formData.stock).toFixed(2)}`}
+                        color="warning"
+                        variant="outlined"
                       />
                     </Box>
                   </Grid>
@@ -531,95 +693,155 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, onSort, onAddCard }) =>
   };
 
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3, mt: 2 }}>
-      {/* Search Field */}
-      <TextField
-        sx={{ flexGrow: 1 }}
-        variant="outlined"
-        label="Search Products"
-        value={searchTerm}
-        onChange={(e) => handleSearch(e.target.value)}
-        InputProps={{
-          startAdornment: (
-            <InputAdornment position="start">
-              <SearchIcon />
-            </InputAdornment>
-          ),
-          endAdornment: searchTerm && (
-            <InputAdornment position="end">
-              <IconButton onClick={clearSearch} edge="end" size="small">
-                <CloseIcon />
-              </IconButton>
-            </InputAdornment>
-          )
-        }}
+    <>
+      <Box sx={{ 
+        display: 'flex', 
+        flexDirection: { xs: 'column', sm: 'row' },
+        gap: 2, 
+        alignItems: { xs: 'stretch', sm: 'center' },
+        mb: 3,
+        p: 2,
+        bgcolor: 'background.paper',
+        borderRadius: 2,
+        boxShadow: 1
+      }}>
+        <TextField
+          placeholder="Buscar produtos..."
+          variant="outlined"
+          size="small"
+          value={searchTerm}
+          onChange={(e) => handleSearch(e.target.value)}
+          sx={{ flexGrow: 1, minWidth: 200 }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon color="action" />
+              </InputAdornment>
+            ),
+            endAdornment: searchTerm && (
+              <InputAdornment position="end">
+                <IconButton size="small" onClick={clearSearch} edge="end">
+                  <CloseIcon />
+                </IconButton>
+              </InputAdornment>
+            ),
+          }}
+        />
+
+        <FormControl size="small" sx={{ minWidth: 160 }}>
+          <InputLabel>Ordenar por</InputLabel>
+          <Select
+            value={sortOption}
+            label="Ordenar por"
+            onChange={handleSortChange}
+          >
+            <MenuItem value="title-asc">Nome (A-Z)</MenuItem>
+            <MenuItem value="title-desc">Nome (Z-A)</MenuItem>
+            <MenuItem value="stock-asc">Estoque (Menor)</MenuItem>
+            <MenuItem value="stock-desc">Estoque (Maior)</MenuItem>
+            <MenuItem value="sell_price-asc">Preço (Menor)</MenuItem>
+            <MenuItem value="sell_price-desc">Preço (Maior)</MenuItem>
+            <MenuItem value="created_at-desc">Mais Recente</MenuItem>
+            <MenuItem value="created_at-asc">Mais Antigo</MenuItem>
+          </Select>
+        </FormControl>
+
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Fab
+            color="secondary"
+            size="small"
+            onClick={() => setQrScannerOpen(true)}
+            sx={{ minWidth: 'auto' }}
+          >
+            <QrCodeScannerIcon />
+          </Fab>
+          
+          <Fab
+            color="primary"
+            size="small"
+            onClick={handleOpenDialog}
+            sx={{ minWidth: 'auto' }}
+          >
+            <AddIcon />
+          </Fab>
+        </Box>
+      </Box>
+
+      {/* QR Code Scanner Dialog */}
+      <QRScanner
+        open={qrScannerOpen}
+        onClose={handleQRScannerClose}
+        onScan={handleQRScan}
+        title="Escanear Produto"
       />
 
-      {/* Sort Dropdown */}
-      <FormControl sx={{ minWidth: 150 }}>
-        <InputLabel>Sort By</InputLabel>
-        <Select
-          value={sortOption}
-          label="Sort By"
-          onChange={handleSortChange}
-        >
-          <MenuItem value="title-asc">Title A-Z</MenuItem>
-          <MenuItem value="title-desc">Title Z-A</MenuItem>
-          <MenuItem value="price-asc">Price: Low to High</MenuItem>
-          <MenuItem value="price-desc">Price: High to Low</MenuItem>
-          <MenuItem value="stock-asc">Stock: Low to High</MenuItem>
-          <MenuItem value="stock-desc">Stock: High to Low</MenuItem>
-        </Select>
-      </FormControl>
+      {/* QR Processing Indicator */}
+      {qrProcessing && (
+        <Box sx={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999 }}>
+          <LinearProgress />
+        </Box>
+      )}
 
-      {/* Add Button */}
-      <Fab 
-        color="primary" 
-        aria-label="add" 
-        onClick={handleOpenDialog}
-        tabIndex={isDialogOpen ? -1 : 0}
-        sx={{ 
-          boxShadow: 3,
-          transition: 'transform 0.2s ease-in-out',
-          opacity: isDialogOpen ? 0.5 : 1,
-          pointerEvents: isDialogOpen ? 'none' : 'auto',
-          '&:hover': {
-            transform: !isDialogOpen ? 'scale(1.1)' : 'none'
+      {/* QR Alert Snackbar */}
+      {qrAlert && (
+        <Snackbar
+          open={!!qrAlert}
+          autoHideDuration={6000}
+          onClose={() => setQrAlert(null)}
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        >
+          <Alert
+            severity={qrAlert.severity}
+            onClose={() => setQrAlert(null)}
+            sx={{ width: '100%' }}
+          >
+            {qrAlert.message}
+          </Alert>
+        </Snackbar>
+      )}
+
+      {/* Create Product Dialog */}
+      <Dialog
+        open={isDialogOpen}
+        onClose={handleCloseDialog}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            maxHeight: '90vh'
           }
         }}
       >
-        <AddIcon />
-      </Fab>
-
-      {/* Enhanced Add Product Dialog */}
-      <Dialog 
-        open={isDialogOpen} 
-        onClose={handleCloseDialog} 
-        maxWidth="md" 
-        fullWidth
-        PaperProps={{
-          sx: { minHeight: '70vh' }
-        }}
-      >
-        <DialogTitle sx={{ pb: 1 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Typography variant="h5" component="div">
-              Add New Product
-            </Typography>
-            <IconButton
-              aria-label="close"
-              onClick={handleCloseDialog}
-            >
-              <CloseIcon />
-            </IconButton>
-          </Box>
-          <LinearProgress 
-            variant="determinate" 
-            value={(activeStep + 1) * 33.33} 
-            sx={{ mt: 2, mb: 1 }}
-          />
+        <DialogTitle sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          pb: 1
+        }}>
+          <Typography variant="h5" sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <AddIcon color="primary" />
+            {qrCodeResult ? 'Criar Produto do QR Code' : 'Adicionar Novo Produto'}
+          </Typography>
+          <IconButton onClick={handleCloseDialog} size="small">
+            <CloseIcon />
+          </IconButton>
         </DialogTitle>
-        
+
+        {/* Show QR Code info if available */}
+        {qrCodeResult && (
+          <Box sx={{ px: 3, pb: 2 }}>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <QrCodeIcon />
+                <Typography variant="body2">
+                  <strong>QR Code detectado:</strong> {qrCodeResult}
+                </Typography>
+              </Box>
+            </Alert>
+          </Box>
+        )}
+
         <DialogContent sx={{ pt: 2 }}>
           <Stepper activeStep={activeStep} orientation="vertical">
             {steps.map((step, index) => (
@@ -655,59 +877,45 @@ const SearchBar: React.FC<SearchBarProps> = ({ onSearch, onSort, onAddCard }) =>
           </Stepper>
         </DialogContent>
         
-        <DialogActions sx={{ p: 3, pt: 2 }}>
-          <Button onClick={handleCloseDialog}>
-            Cancel
+        <DialogActions sx={{ p: 3, pt: 1 }}>
+          <Button onClick={handleCloseDialog} size="large">
+            Cancelar
           </Button>
-          <Box sx={{ flex: '1 1 auto' }} />
-          {activeStep > 0 && (
-            <Button onClick={handleBack} sx={{ mr: 1 }}>
-              Back
-            </Button>
-          )}
           {activeStep < steps.length - 1 ? (
-            <Button 
-              variant="contained" 
-              onClick={handleNext}
-              disabled={!isCurrentStepValid}
-              sx={{
-                backgroundColor: isCurrentStepValid ? 'primary.main' : 'grey.300',
-                color: isCurrentStepValid ? 'white' : 'grey.500',
-                '&:hover': {
-                  backgroundColor: isCurrentStepValid ? 'primary.dark' : 'grey.400',
-                },
-                '&:disabled': {
-                  backgroundColor: 'grey.300',
-                  color: 'grey.500',
-                }
-              }}
-            >
-              Next
-            </Button>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              {activeStep > 0 && (
+                <Button onClick={handleBack} size="large">
+                  Voltar
+                </Button>
+              )}
+              <Button 
+                variant="contained" 
+                onClick={handleNext} 
+                disabled={!isCurrentStepValid}
+                size="large"
+              >
+                Próximo
+              </Button>
+            </Box>
           ) : (
-            <Button 
-              variant="contained" 
-              onClick={handleSubmit}
-              disabled={!isFormValid()}
-              color="success"
-              sx={{
-                backgroundColor: isFormValid() ? 'success.main' : 'grey.300',
-                color: isFormValid() ? 'white' : 'grey.500',
-                '&:hover': {
-                  backgroundColor: isFormValid() ? 'success.dark' : 'grey.400',
-                },
-                '&:disabled': {
-                  backgroundColor: 'grey.300',
-                  color: 'grey.500',
-                }
-              }}
-            >
-              Add Product
-            </Button>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button onClick={handleBack} size="large">
+                Voltar
+              </Button>
+              <Button 
+                variant="contained" 
+                onClick={handleSubmit} 
+                disabled={!isFormValid()}
+                size="large"
+                startIcon={<AddIcon />}
+              >
+                {qrCodeResult ? 'Criar do QR Code' : 'Criar Produto'}
+              </Button>
+            </Box>
           )}
         </DialogActions>
       </Dialog>
-    </Box>
+    </>
   );
 };
 

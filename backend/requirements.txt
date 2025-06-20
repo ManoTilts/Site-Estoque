@@ -7,3 +7,5 @@ python-dotenv
 email-validator
 python-jose[cryptography]
 python-multipart
+qrcode[pil]
+pillow

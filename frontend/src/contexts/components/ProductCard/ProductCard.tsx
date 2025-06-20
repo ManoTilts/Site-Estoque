@@ -11,9 +11,12 @@ import {
   DialogActions,
   Box,
   Chip,
-  Divider
+  Divider,
+  Alert
 } from '@mui/material';
 import ImageIcon from '@mui/icons-material/Image';
+import WarningIcon from '@mui/icons-material/Warning';
+import ErrorIcon from '@mui/icons-material/Error';
 
 interface ProductCardProps {
   title: string;
@@ -21,6 +24,7 @@ interface ProductCardProps {
   imageUrl: string;
   price: number;
   stock: number;
+  low_stock_threshold?: number;
   category?: string;
   distributer: string;
   unit?: string;
@@ -33,6 +37,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
   imageUrl, 
   price,
   stock,
+  low_stock_threshold = 10,
   category,
   distributer,
   unit,
@@ -66,13 +71,32 @@ const ProductCard: React.FC<ProductCardProps> = ({
     }).format(price);
   };
 
-  const getStockStatus = (stock: number) => {
-    if (stock === 0) return { label: 'Out of Stock', color: 'error' as const };
-    if (stock < 10) return { label: 'Low Stock', color: 'warning' as const };
-    return { label: 'In Stock', color: 'success' as const };
+  const getStockStatus = (stock: number, threshold: number) => {
+    if (stock === 0) return { 
+      label: 'Out of Stock', 
+      color: 'error' as const, 
+      icon: <ErrorIcon sx={{ fontSize: 16 }} />,
+      severity: 'critical' as const
+    };
+    if (stock <= threshold) return { 
+      label: 'Low Stock', 
+      color: 'warning' as const, 
+      icon: <WarningIcon sx={{ fontSize: 16 }} />,
+      severity: 'warning' as const
+    };
+    return { 
+      label: 'In Stock', 
+      color: 'success' as const, 
+      icon: null,
+      severity: 'normal' as const
+    };
   };
 
-  const stockStatus = getStockStatus(stock);
+  const stockStatus = getStockStatus(stock, low_stock_threshold);
+  
+  // Check if item needs alert
+  const isLowStock = stock <= low_stock_threshold && stock > 0;
+  const isOutOfStock = stock === 0;
 
   // Fallback image component
   const ImageFallback = ({ height }: { height: number | string }) => (
@@ -97,9 +121,11 @@ const ProductCard: React.FC<ProductCardProps> = ({
           width: 500, 
           height: 350,
           cursor: 'pointer',
-          transition: 'transform 0.3s, box-shadow 0.3s',
+          transition: 'transform 0.3s, box-shadow 0.3s, border-color 0.3s',
           transform: isHovered ? 'scale(1.05)' : 'scale(1)',
           boxShadow: isHovered ? '0 8px 16px rgba(0,0,0,0.2)' : '0 4px 8px rgba(0,0,0,0.1)',
+          border: isOutOfStock ? '3px solid #d32f2f' : isLowStock ? '2px solid #ff9800' : '1px solid #e0e0e0',
+          position: 'relative',
           '&:hover': {
             boxShadow: '0 8px 16px rgba(0,0,0,0.2)',
           }
@@ -108,6 +134,31 @@ const ProductCard: React.FC<ProductCardProps> = ({
         onMouseLeave={() => setIsHovered(false)}
         onClick={handleOpenDialog}
       >
+        {/* Ícone de alerta posicionado absolutamente */}
+        {(isOutOfStock || isLowStock) && (
+          <Box
+            sx={{
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              zIndex: 10,
+              backgroundColor: isOutOfStock ? 'error.main' : 'warning.main',
+              borderRadius: '50%',
+              width: 32,
+              height: 32,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+            }}
+          >
+            {isOutOfStock ? (
+              <ErrorIcon sx={{ color: 'white', fontSize: 20 }} />
+            ) : (
+              <WarningIcon sx={{ color: 'white', fontSize: 20 }} />
+            )}
+          </Box>
+        )}
         {imageError || !imageUrl ? (
           <ImageFallback height={140} />
         ) : (
@@ -119,46 +170,83 @@ const ProductCard: React.FC<ProductCardProps> = ({
             onError={handleImageError}
           />
         )}
-        <CardContent>
-          <Typography variant="h6" component="div" noWrap>
-            {title}
-          </Typography>
-          <Typography 
-            variant="body2" 
-            color="text.secondary" 
-            sx={{ 
-              mb: 1,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              display: '-webkit-box',
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: 'vertical',
-              wordWrap: 'break-word',
-              hyphens: 'auto'
-            }}
-          >
-            {description}
-          </Typography>
-          
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-            <Typography variant="h6" color="primary">
-              {formatPrice(price)}
+        <CardContent sx={{ 
+          display: 'flex', 
+          flexDirection: 'column', 
+          height: '100%',
+          justifyContent: 'space-between'
+        }}>
+          <Box>
+            <Typography variant="h6" component="div" noWrap>
+              {title}
             </Typography>
-            <Chip 
-              label={stockStatus.label} 
-              color={stockStatus.color} 
-              size="small" 
-            />
+            <Typography 
+              variant="body2" 
+              color="text.secondary" 
+              sx={{ 
+                mb: 1,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                wordWrap: 'break-word',
+                hyphens: 'auto'
+              }}
+            >
+              {description}
+            </Typography>
+            
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+              <Typography variant="h6" color="primary">
+                {formatPrice(price)}
+              </Typography>
+              <Chip 
+                label={stockStatus.label} 
+                color={stockStatus.color} 
+                size="small"
+                {...(stockStatus.icon && { icon: stockStatus.icon })}
+                sx={{
+                  fontWeight: stockStatus.severity !== 'normal' ? 'bold' : 'normal',
+                  '& .MuiChip-icon': {
+                    fontSize: 16
+                  }
+                }}
+              />
+            </Box>
+            
+            <Typography variant="body2" color="text.secondary">
+              Stock: {stock}
+            </Typography>
+            
+            {category && (
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
+                Category: {category}
+              </Typography>
+            )}
           </Box>
           
-          <Typography variant="body2" color="text.secondary">
-            Stock: {stock}
-          </Typography>
-          
-          {category && (
-            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
-              Category: {category}
-            </Typography>
+          {/* Alerta visual para estoque baixo - sempre no final */}
+          {(isLowStock || isOutOfStock) && (
+            <Alert 
+              severity={isOutOfStock ? "error" : "warning"} 
+              icon={stockStatus.icon}
+              sx={{ 
+                mt: 1,
+                py: 0.25,
+                px: 1,
+                '& .MuiAlert-message': {
+                  fontSize: '0.65rem',
+                  fontWeight: 'bold',
+                  lineHeight: 1.1
+                },
+                '& .MuiAlert-icon': {
+                  fontSize: '0.9rem'
+                }
+              }}
+            >
+              {isOutOfStock ? 'OUT OF STOCK' : `LOW STOCK (≤${low_stock_threshold})`}
+            </Alert>
           )}
         </CardContent>
       </Card>
@@ -222,7 +310,14 @@ const ProductCard: React.FC<ProductCardProps> = ({
               <Chip 
                 label={stockStatus.label} 
                 color={stockStatus.color} 
-                size="small" 
+                size="small"
+                {...(stockStatus.icon && { icon: stockStatus.icon })}
+                sx={{
+                  fontWeight: stockStatus.severity !== 'normal' ? 'bold' : 'normal',
+                  '& .MuiChip-icon': {
+                    fontSize: 16
+                  }
+                }}
               />
             </Box>
           </Box>

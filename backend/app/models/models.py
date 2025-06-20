@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, EmailStr, field_serializer, field_validat
 from typing import Optional, Annotated, Any, List
 from datetime import datetime
 from bson import ObjectId
+from enum import Enum
 
 # Fix for PyObjectId to work with Pydantic v2
 class PyObjectId(str):
@@ -25,7 +26,9 @@ class ItemBase(BaseModel):
     distributer: str
     unit: Optional[str] = None  #unidade de medida
     stock: int
-    price: float
+    low_stock_threshold: Optional[int] = 10  # Threshold personalizado para alerta de estoque baixo
+    purchase_price: Optional[float] = None  # Preço de compra
+    sell_price: Optional[float] = None      # Preço de venda
     barcode: Optional[str] = None  # Made optional so it can be auto-generated
     image: Optional[str] = None
     associatedUser: str
@@ -40,7 +43,9 @@ class ItemUpdate(BaseModel):
     distributer: Optional[str] = None
     unit: Optional[str] = None
     stock: Optional[int] = None
-    price: Optional[float] = None
+    low_stock_threshold: Optional[int] = None
+    purchase_price: Optional[float] = None
+    sell_price: Optional[float] = None
     image: Optional[str] = None
 
 class ItemInDB(ItemBase):
@@ -110,3 +115,59 @@ class AuthResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     user: User
+
+# Stock Transaction models for losses, damages, and returns
+class StockTransactionType(str, Enum):
+    LOSS = "loss"           # Perdas
+    DAMAGE = "damage"       # Danos
+    RETURN = "return"       # Devoluções
+
+class StockTransactionBase(BaseModel):
+    item_id: str
+    transaction_type: StockTransactionType
+    quantity: int
+    reason: str
+    notes: Optional[str] = None
+    cost_impact: Optional[float] = None  # Impacto financeiro
+    reference_number: Optional[str] = None  # Número de referência para devoluções
+    associated_user: str
+
+class StockTransactionCreate(StockTransactionBase):
+    pass
+
+class StockTransactionUpdate(BaseModel):
+    reason: Optional[str] = None
+    notes: Optional[str] = None
+    cost_impact: Optional[float] = None
+    reference_number: Optional[str] = None
+
+class StockTransactionInDB(StockTransactionBase):
+    id: Annotated[PyObjectId, Field(alias="_id", default_factory=PyObjectId)]
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = None
+
+    @field_serializer('id')
+    def serialize_id(self, id: PyObjectId) -> str:
+        return str(id)
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "_id": "64c12e00e55f5aaa5c5e7e01",
+                    "item_id": "64c12e00e55f5aaa5c5e7e00",
+                    "transaction_type": "loss",
+                    "quantity": 5,
+                    "reason": "Produto vencido",
+                    "notes": "Lote vencido em 15/12/2023",
+                    "cost_impact": 25.50,
+                    "reference_number": None,
+                    "associated_user": "user123",
+                    "created_at": "2023-07-26T10:00:00",
+                    "updated_at": None
+                }
+            ]
+        },
+        "populate_by_name": True,
+        "arbitrary_types_allowed": True
+    }

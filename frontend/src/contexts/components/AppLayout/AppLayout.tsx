@@ -204,7 +204,7 @@ export default function AppLayout({ children, pageTitle, currentPage }: AppLayou
                             mr: 3,
                           }
                         : {
-                            mr: 'auto',
+                            mr: 0,
                           },
                     ]}
                   >
