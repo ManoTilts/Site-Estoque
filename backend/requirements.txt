@@ -9,3 +9,7 @@ python-jose[cryptography]
 python-multipart
 qrcode[pil]
 pillow
+openpyxl
+pandas
+python-barcode
+reportlab

@@ -381,3 +381,103 @@ class StockTransactionService:
                 stats["total"]["count"] += result["count"]
         
         return stats
+
+class ActivityLogService:
+    @staticmethod
+    def get_collection() -> AsyncIOMotorCollection:
+        """Get activity log collection"""
+        db = get_database()
+        return db.activity_logs
+
+    @staticmethod
+    async def log_activity(activity_data: Dict) -> Dict:
+        """Log a new activity"""
+        collection = ActivityLogService.get_collection()
+        
+        # Add timestamp
+        activity_data["created_at"] = datetime.datetime.utcnow()
+        
+        result = await collection.insert_one(activity_data)
+        return await collection.find_one({"_id": result.inserted_id})
+
+    @staticmethod
+    async def get_user_activities(
+        user_id: str,
+        activity_type: Optional[str] = None,
+        entity_type: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Dict]:
+        """Get activities for a user with optional filters"""
+        collection = ActivityLogService.get_collection()
+        
+        # Build query
+        query = {"user_id": user_id}
+        
+        if activity_type:
+            query["activity_type"] = activity_type
+            
+        if entity_type:
+            query["entity_type"] = entity_type
+        
+        cursor = collection.find(query).sort("created_at", -1).skip(skip).limit(limit)
+        return await cursor.to_list(length=limit)
+
+    @staticmethod
+    async def get_activity_count(
+        user_id: str,
+        activity_type: Optional[str] = None,
+        entity_type: Optional[str] = None
+    ) -> int:
+        """Get count of activities for a user with optional filters"""
+        collection = ActivityLogService.get_collection()
+        
+        # Build query
+        query = {"user_id": user_id}
+        
+        if activity_type:
+            query["activity_type"] = activity_type
+            
+        if entity_type:
+            query["entity_type"] = entity_type
+        
+        return await collection.count_documents(query)
+
+    @staticmethod
+    async def get_recent_activities(user_id: str, limit: int = 20) -> List[Dict]:
+        """Get recent activities for a user"""
+        collection = ActivityLogService.get_collection()
+        
+        cursor = collection.find({"user_id": user_id}).sort("created_at", -1).limit(limit)
+        return await cursor.to_list(length=limit)
+
+    @staticmethod
+    async def get_activity_stats(user_id: str) -> Dict:
+        """Get activity statistics for a user"""
+        collection = ActivityLogService.get_collection()
+        
+        # Aggregate statistics
+        pipeline = [
+            {"$match": {"user_id": user_id}},
+            {
+                "$group": {
+                    "_id": "$activity_type",
+                    "count": {"$sum": 1}
+                }
+            }
+        ]
+        
+        results = await collection.aggregate(pipeline).to_list(length=None)
+        
+        # Format results
+        stats = {}
+        total_count = 0
+        
+        for result in results:
+            activity_type = result["_id"]
+            count = result["count"]
+            stats[activity_type] = count
+            total_count += count
+        
+        stats["total"] = total_count
+        return stats

@@ -216,56 +216,37 @@ def explain_indexes():
 async def create_indexes(db: AsyncIOMotorDatabase):
     """Create database indexes for better performance"""
     
-    # Items collection indexes
-    items_collection = db.items
+    print("Creating indexes for activity logs...")
     
-    # Create indexes for items collection
-    items_indexes = [
+    # Activity logs collection indexes
+    activity_logs_collection = db.activity_logs
+    
+    # Create indexes for activity logs collection
+    activity_logs_indexes = [
         # Basic indexes
-        IndexModel([("associatedUser", ASCENDING)], name="associatedUser_1"),
-        IndexModel([("barcode", ASCENDING)], unique=True, name="barcode_1_unique"),
+        IndexModel([("user_id", ASCENDING)], name="user_id_1"),
+        IndexModel([("activity_type", ASCENDING)], name="activity_type_1"),
+        IndexModel([("entity_type", ASCENDING)], name="entity_type_1"),
+        IndexModel([("entity_id", ASCENDING)], name="entity_id_1"),
         IndexModel([("created_at", DESCENDING)], name="created_at_-1"),
         
         # Compound indexes for efficient queries
-        IndexModel([("associatedUser", ASCENDING), ("category", ASCENDING)], name="user_category_1"),
-        IndexModel([("associatedUser", ASCENDING), ("distributer", ASCENDING)], name="user_distributer_1"),
-        IndexModel([("associatedUser", ASCENDING), ("stock", ASCENDING)], name="user_stock_1"),
-        IndexModel([("associatedUser", ASCENDING), ("title", ASCENDING)], name="user_title_1"),
-        IndexModel([("associatedUser", ASCENDING), ("created_at", DESCENDING)], name="user_created_-1"),
+        IndexModel([("user_id", ASCENDING), ("activity_type", ASCENDING)], name="user_activity_type_1"),
+        IndexModel([("user_id", ASCENDING), ("entity_type", ASCENDING)], name="user_entity_type_1"),
+        IndexModel([("user_id", ASCENDING), ("created_at", DESCENDING)], name="user_created_-1"),
+        IndexModel([("entity_id", ASCENDING), ("created_at", DESCENDING)], name="entity_created_-1"),
         
-        # For low stock queries
-        IndexModel([("associatedUser", ASCENDING), ("stock", ASCENDING), ("low_stock_threshold", ASCENDING)], name="user_low_stock"),
-        
-        # Text search index
-        IndexModel([("title", TEXT), ("description", TEXT)], name="text_search")
+        # For activity statistics and recent activity queries
+        IndexModel([("user_id", ASCENDING), ("activity_type", ASCENDING), ("created_at", DESCENDING)], name="user_type_created_-1"),
     ]
     
-    await items_collection.create_indexes(items_indexes)
+    try:
+        await activity_logs_collection.create_indexes(activity_logs_indexes)
+        print("Activity logs indexes created successfully!")
+    except Exception as e:
+        print(f"Note: Some activity logs indexes may already exist: {e}")
     
-    # Stock transactions collection indexes
-    stock_transactions_collection = db.stock_transactions
-    
-    # Create indexes for stock transactions collection
-    stock_transactions_indexes = [
-        # Basic indexes
-        IndexModel([("associated_user", ASCENDING)], name="associated_user_1"),
-        IndexModel([("item_id", ASCENDING)], name="item_id_1"),
-        IndexModel([("transaction_type", ASCENDING)], name="transaction_type_1"),
-        IndexModel([("created_at", DESCENDING)], name="created_at_-1"),
-        
-        # Compound indexes for efficient queries
-        IndexModel([("associated_user", ASCENDING), ("transaction_type", ASCENDING)], name="user_type_1"),
-        IndexModel([("associated_user", ASCENDING), ("item_id", ASCENDING)], name="user_item_1"),
-        IndexModel([("associated_user", ASCENDING), ("created_at", DESCENDING)], name="user_created_-1"),
-        IndexModel([("item_id", ASCENDING), ("created_at", DESCENDING)], name="item_created_-1"),
-        
-        # For transaction statistics
-        IndexModel([("associated_user", ASCENDING), ("transaction_type", ASCENDING), ("created_at", DESCENDING)], name="user_type_created_-1"),
-    ]
-    
-    await stock_transactions_collection.create_indexes(stock_transactions_indexes)
-    
-    print("All database indexes created successfully!")
+    print("All database indexes creation attempt completed!")
 
 async def drop_indexes(db: AsyncIOMotorDatabase):
     """Drop all custom indexes (useful for development)"""

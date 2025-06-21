@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, EmailStr, field_serializer, field_validator
-from typing import Optional, Annotated, Any, List
+from typing import Optional, Annotated, Any, List, Dict
 from datetime import datetime
 from bson import ObjectId
 from enum import Enum
@@ -165,6 +165,61 @@ class StockTransactionInDB(StockTransactionBase):
                     "associated_user": "user123",
                     "created_at": "2023-07-26T10:00:00",
                     "updated_at": None
+                }
+            ]
+        },
+        "populate_by_name": True,
+        "arbitrary_types_allowed": True
+    }
+
+# Activity Log models for tracking user activities
+class ActivityType(str, Enum):
+    ITEM_CREATED = "item_created"
+    ITEM_UPDATED = "item_updated"
+    ITEM_DELETED = "item_deleted"
+    STOCK_TRANSACTION = "stock_transaction"
+    USER_LOGIN = "user_login"
+    USER_LOGOUT = "user_logout"
+
+class ActivityLogBase(BaseModel):
+    user_id: str
+    activity_type: ActivityType
+    description: str
+    entity_id: Optional[str] = None  # ID do produto, transação, etc.
+    entity_type: Optional[str] = None  # "item", "transaction", etc.
+    metadata: Optional[Dict] = None  # Dados adicionais da atividade
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+
+class ActivityLogCreate(ActivityLogBase):
+    pass
+
+class ActivityLogInDB(ActivityLogBase):
+    id: Annotated[PyObjectId, Field(alias="_id", default_factory=PyObjectId)]
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    @field_serializer('id')
+    def serialize_id(self, id: PyObjectId) -> str:
+        return str(id)
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "_id": "64c12e00e55f5aaa5c5e7e02",
+                    "user_id": "user123",
+                    "activity_type": "item_created",
+                    "description": "Produto 'Notebook Dell' foi criado",
+                    "entity_id": "64c12e00e55f5aaa5c5e7e00",
+                    "entity_type": "item",
+                    "metadata": {
+                        "item_title": "Notebook Dell",
+                        "stock": 10,
+                        "price": 2500.00
+                    },
+                    "ip_address": "192.168.1.1",
+                    "user_agent": "Mozilla/5.0...",
+                    "created_at": "2023-07-26T10:00:00"
                 }
             ]
         },

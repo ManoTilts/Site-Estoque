@@ -18,7 +18,8 @@ import {
   ListItemText,
   ListItemAvatar,
   CircularProgress,
-  Alert
+  Alert,
+  Tooltip
 } from '@mui/material';
 import {
   TrendingUp,
@@ -32,10 +33,12 @@ import {
   Assessment,
   Refresh,
   MoreVert,
-  Circle
+  Circle,
+  Download as DownloadIcon,
+  GetApp as GetAppIcon
 } from '@mui/icons-material';
 import AppLayout from '../../contexts/components/AppLayout/AppLayout';
-import { dashboardService, DashboardData, DashboardKPIs, Item } from '../../api/funcs';
+import { dashboardService, DashboardData, DashboardKPIs, Item, exportService } from '../../api/funcs';
 
 // Low stock threshold
 const LOW_STOCK_THRESHOLD = 10; //later make this dynamic
@@ -210,6 +213,24 @@ export default function Dashboard() {
     loadDashboardData();
   };
 
+  const handleExportLowStock = async () => {
+    try {
+      const blob = await exportService.exportItemsToExcel({ lowStockOnly: true });
+      exportService.downloadBlob(blob, `estoque_baixo_${new Date().toISOString().split('T')[0]}.xlsx`);
+    } catch (err) {
+      console.error('Error exporting low stock items:', err);
+    }
+  };
+
+  const handleExportFullReport = async () => {
+    try {
+      const blob = await exportService.exportFullReport();
+      exportService.downloadBlob(blob, `relatorio_completo_${new Date().toISOString().split('T')[0]}.xlsx`);
+    } catch (err) {
+      console.error('Error exporting full report:', err);
+    }
+  };
+
   if (loading) {
     return (
       <AppLayout pageTitle="Analytics Dashboard" currentPage="DashBoard">
@@ -256,6 +277,16 @@ export default function Dashboard() {
           </Typography>
         </Box>
         <Box display="flex" gap={1}>
+          <Tooltip title="Exportar Estoque Baixo">
+            <IconButton color="warning" onClick={handleExportLowStock}>
+              <DownloadIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Exportar Relatório Completo">
+            <IconButton color="success" onClick={handleExportFullReport}>
+              <GetAppIcon />
+            </IconButton>
+          </Tooltip>
           <IconButton color="primary" onClick={handleRefresh}>
             <Refresh />
           </IconButton>

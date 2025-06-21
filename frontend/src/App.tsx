@@ -7,6 +7,8 @@ import Profile from './pages/Profile/Profile'
 import Dashboard from './pages/Dashboard/Dashboard'
 import ManageProduct from './pages/ManageProduct/ManageProduct'
 import StockTransactions from './pages/StockTransactions/StockTransactions'
+import ActivityLog from './pages/ActivityLog/ActivityLog'
+import ExportData from './pages/ExportData/ExportData'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 
 // Protected Route Component
@@ -62,6 +64,22 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <StockTransactions />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/activity-log" 
+          element={
+            <ProtectedRoute>
+              <ActivityLog />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/export" 
+          element={
+            <ProtectedRoute>
+              <ExportData />
             </ProtectedRoute>
           } 
         />

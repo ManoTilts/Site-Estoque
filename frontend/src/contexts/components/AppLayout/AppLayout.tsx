@@ -21,6 +21,7 @@ import PersonIcon from '@mui/icons-material/Person';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import DownloadIcon from '@mui/icons-material/Download';
 import HistoryIcon from '@mui/icons-material/History';
+import WarningIcon from '@mui/icons-material/Warning';
 import ColorModeSelect from '../../../pages/shared-theme/ColorModeSelect';
 import AppTheme from '../../../pages/shared-theme/AppTheme';
 import { useNavigate } from 'react-router-dom';
@@ -132,8 +133,9 @@ export default function AppLayout({ children, pageTitle, currentPage }: AppLayou
     { text: 'Home', icon: <HomeIcon />, path: '/home' },
     { text: 'Profile', icon: <PersonIcon />, path: '/profile' },
     { text: 'DashBoard', icon: <DashboardIcon />, path: '/dashboard' },
+    { text: 'Stock Transactions', icon: <WarningIcon />, path: '/stock-transactions' },
+    { text: 'Activity Log', icon: <HistoryIcon />, path: '/activity-log' },
     { text: 'Export Data', icon: <DownloadIcon />, path: '/export' },
-    { text: 'Activity Log', icon: <HistoryIcon />, path: '/activity' },
   ];
 
   const handleMenuClick = (path: string) => {

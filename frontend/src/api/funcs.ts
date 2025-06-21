@@ -157,9 +157,9 @@ export const productService = {
   },
 
   // Get user's categories
-  async getUserCategories(userId: string): Promise<string[]> {
+  async getUserCategories(): Promise<string[]> {
     try {
-      const response = await apiClient.get(`/api/users/${userId}/categories`);
+      const response = await apiClient.get('/api/categories');
       return response.data.categories;
     } catch (error) {
       console.error('Error fetching user categories:', error);
@@ -168,9 +168,9 @@ export const productService = {
   },
 
   // Get user's distributors
-  async getUserDistributors(userId: string): Promise<string[]> {
+  async getUserDistributors(): Promise<string[]> {
     try {
-      const response = await apiClient.get(`/api/users/${userId}/distributors`);
+      const response = await apiClient.get('/api/distributors');
       return response.data.distributors;
     } catch (error) {
       console.error('Error fetching user distributors:', error);
@@ -735,5 +735,99 @@ export const stockTransactionService = {
   // Get transactions by type
   async getTransactionsByType(type: StockTransactionType, skip: number = 0, limit: number = 100): Promise<StockTransactionResponse> {
     return this.getTransactions(type, undefined, skip, limit);
+  }
+};
+
+// Export service for Excel downloads
+export const exportService = {
+  // Export user items to Excel
+  async exportItemsToExcel(options: {
+    category?: string;
+    distributer?: string;
+    lowStockOnly?: boolean;
+  } = {}): Promise<Blob> {
+    try {
+      const params = new URLSearchParams();
+      if (options.category) params.append('category', options.category);
+      if (options.distributer) params.append('distributer', options.distributer);
+      if (options.lowStockOnly) params.append('low_stock_only', 'true');
+
+      const response = await apiClient.get(`/api/export/items?${params.toString()}`, {
+        responseType: 'blob'
+      });
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error exporting items to Excel:', error);
+      throw error;
+    }
+  },
+
+  // Export stock transactions to Excel
+  async exportStockTransactionsToExcel(options: {
+    transactionType?: string;
+    itemId?: string;
+  } = {}): Promise<Blob> {
+    try {
+      const params = new URLSearchParams();
+      if (options.transactionType) params.append('transaction_type', options.transactionType);
+      if (options.itemId) params.append('item_id', options.itemId);
+
+      const response = await apiClient.get(`/api/export/stock-transactions?${params.toString()}`, {
+        responseType: 'blob'
+      });
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error exporting stock transactions to Excel:', error);
+      throw error;
+    }
+  },
+
+  // Export activity logs to Excel
+  async exportActivityLogsToExcel(options: {
+    activityType?: string;
+    entityType?: string;
+  } = {}): Promise<Blob> {
+    try {
+      const params = new URLSearchParams();
+      if (options.activityType) params.append('activity_type', options.activityType);
+      if (options.entityType) params.append('entity_type', options.entityType);
+
+      const response = await apiClient.get(`/api/export/activity-logs?${params.toString()}`, {
+        responseType: 'blob'
+      });
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error exporting activity logs to Excel:', error);
+      throw error;
+    }
+  },
+
+  // Export full inventory report
+  async exportFullReport(): Promise<Blob> {
+    try {
+      const response = await apiClient.get('/api/export/full-report', {
+        responseType: 'blob'
+      });
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error exporting full report:', error);
+      throw error;
+    }
+  },
+
+  // Helper function to download blob as file
+  downloadBlob(blob: Blob, filename: string) {
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
   }
 };

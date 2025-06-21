@@ -1,11 +1,16 @@
 from fastapi import APIRouter, HTTPException, status, Body, Query, Depends
 from typing import List, Optional
-from app.models.models import ItemCreate, ItemUpdate, ItemInDB, StockTransactionCreate, StockTransactionUpdate, StockTransactionInDB, StockTransactionType
-from app.services.service import ItemService, StockTransactionService
+from app.models.models import ItemCreate, ItemUpdate, ItemInDB, StockTransactionCreate, StockTransactionUpdate, StockTransactionInDB, StockTransactionType, ActivityLogInDB, ActivityType
+from app.services.service import ItemService, StockTransactionService, ActivityLogService
 from bson import ObjectId
 from datetime import datetime
 from app.routes.auth import router as auth_router
 from app.utils.auth_dependencies import get_current_user_id
+from app.utils.units import get_all_units, get_units_by_category, get_unit_categories
+from fastapi.responses import StreamingResponse
+import pandas as pd
+import io
+from datetime import datetime
 
 router = APIRouter()
 
@@ -211,6 +216,20 @@ async def create_item(
     
     new_item = await ItemService.create(item_dict)
     
+    # Log activity
+    await ActivityLogService.log_activity({
+        "user_id": current_user_id,
+        "activity_type": ActivityType.ITEM_CREATED,
+        "description": f"Produto '{item_dict['title']}' foi criado",
+        "entity_id": str(new_item["_id"]),
+        "entity_type": "item",
+        "metadata": {
+            "item_title": item_dict["title"],
+            "stock": item_dict["stock"],
+            "barcode": item_dict["barcode"]
+        }
+    })
+    
     # Convert the MongoDB document to your Pydantic model
     created_item = ItemInDB(
         id=str(new_item["_id"]),  # Convert ObjectId to string
@@ -243,6 +262,21 @@ async def update_item(
     if updated_item is None:
         raise HTTPException(status_code=404, detail=f"Item with ID {id} not found")
     
+    # Log activity
+    updated_fields = list(item_dict.keys())
+    await ActivityLogService.log_activity({
+        "user_id": current_user_id,
+        "activity_type": ActivityType.ITEM_UPDATED,
+        "description": f"Produto '{existing_item['title']}' foi atualizado",
+        "entity_id": id,
+        "entity_type": "item",
+        "metadata": {
+            "item_title": existing_item["title"],
+            "updated_fields": updated_fields,
+            "changes": item_dict
+        }
+    })
+    
     # Convert the MongoDB document to your Pydantic model
     return ItemInDB(
         id=str(updated_item["_id"]),  # Convert ObjectId to string
@@ -265,6 +299,20 @@ async def delete_item(
     deleted = await ItemService.delete(id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Item with ID {id} not found")
+    
+    # Log activity
+    await ActivityLogService.log_activity({
+        "user_id": current_user_id,
+        "activity_type": ActivityType.ITEM_DELETED,
+        "description": f"Produto '{existing_item['title']}' foi deletado",
+        "entity_id": id,
+        "entity_type": "item",
+        "metadata": {
+            "item_title": existing_item["title"],
+            "barcode": existing_item.get("barcode")
+        }
+    })
+    
     return {"detail": "Item deleted successfully"}
 
 # QR Code related endpoints
@@ -452,6 +500,22 @@ async def create_stock_transaction(
         if not created_transaction:
             raise HTTPException(status_code=500, detail="Failed to create transaction")
         
+        # Log activity
+        await ActivityLogService.log_activity({
+            "user_id": current_user_id,
+            "activity_type": ActivityType.STOCK_TRANSACTION,
+            "description": f"Transação de estoque '{transaction.transaction_type}' criada para produto '{item['title']}'",
+            "entity_id": str(created_transaction["_id"]),
+            "entity_type": "stock_transaction",
+            "metadata": {
+                "item_title": item["title"],
+                "item_id": transaction.item_id,
+                "transaction_type": transaction.transaction_type,
+                "quantity": transaction.quantity,
+                "reason": transaction.reason
+            }
+        })
+        
         return StockTransactionInDB(
             id=str(created_transaction["_id"]),
             **{k: v for k, v in created_transaction.items() if k != "_id"}
@@ -575,3 +639,425 @@ async def update_stock_transaction(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating stock transaction: {str(e)}")
+
+# Activity Log Routes
+@router.get("/activity-logs/", response_description="Get activity logs", response_model=List[ActivityLogInDB])
+async def get_activity_logs(
+    current_user_id: str = Depends(get_current_user_id),
+    activity_type: Optional[ActivityType] = Query(None, description="Filter by activity type"),
+    entity_type: Optional[str] = Query(None, description="Filter by entity type"),
+    skip: int = Query(0, description="Number of activities to skip"),
+    limit: int = Query(100, description="Maximum number of activities to return")
+):
+    """Get activity logs for the current user"""
+    try:
+        activities = await ActivityLogService.get_user_activities(
+            user_id=current_user_id,
+            activity_type=activity_type.value if activity_type else None,
+            entity_type=entity_type,
+            skip=skip,
+            limit=limit
+        )
+        
+        return [
+            ActivityLogInDB(
+                id=str(activity["_id"]),
+                **{k: v for k, v in activity.items() if k != "_id"}
+            )
+            for activity in activities
+        ]
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching activity logs: {str(e)}")
+
+@router.get("/activity-logs/count", response_description="Get activity log count")
+async def get_activity_log_count(
+    current_user_id: str = Depends(get_current_user_id),
+    activity_type: Optional[ActivityType] = Query(None, description="Filter by activity type"),
+    entity_type: Optional[str] = Query(None, description="Filter by entity type")
+):
+    """Get count of activity logs for the current user"""
+    try:
+        count = await ActivityLogService.get_activity_count(
+            user_id=current_user_id,
+            activity_type=activity_type.value if activity_type else None,
+            entity_type=entity_type
+        )
+        return {"count": count}
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error counting activity logs: {str(e)}")
+
+@router.get("/activity-logs/recent", response_description="Get recent activity logs", response_model=List[ActivityLogInDB])
+async def get_recent_activity_logs(
+    current_user_id: str = Depends(get_current_user_id),
+    limit: int = Query(20, description="Maximum number of recent activities to return")
+):
+    """Get recent activity logs for the current user"""
+    try:
+        activities = await ActivityLogService.get_recent_activities(current_user_id, limit)
+        
+        return [
+            ActivityLogInDB(
+                id=str(activity["_id"]),
+                **{k: v for k, v in activity.items() if k != "_id"}
+            )
+            for activity in activities
+        ]
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching recent activity logs: {str(e)}")
+
+@router.get("/activity-logs/stats", response_description="Get activity log statistics")
+async def get_activity_log_stats(current_user_id: str = Depends(get_current_user_id)):
+    """Get activity log statistics for the current user"""
+    try:
+        stats = await ActivityLogService.get_activity_stats(current_user_id)
+        return stats
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching activity log stats: {str(e)}")
+
+# Export Routes
+@router.get("/export/items", response_description="Export user items to Excel")
+async def export_user_items_to_excel(
+    current_user_id: str = Depends(get_current_user_id),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    distributer: Optional[str] = Query(None, description="Filter by distributor"),
+    low_stock_only: bool = Query(False, description="Export only low stock items")
+):
+    """Export user's items to Excel with optional filtering"""
+    try:
+        if low_stock_only:
+            items = await ItemService.get_low_stock_items(current_user_id)
+        elif category or distributer:
+            items = await ItemService.filter_user_items(
+                user_id=current_user_id,
+                category=category,
+                distributer=distributer
+            )
+        else:
+            items = await ItemService.get_by_user(current_user_id)
+        
+        if not items:
+            raise HTTPException(status_code=404, detail="No items found")
+        
+        # Prepare data for Excel export
+        export_data = []
+        for item in items:
+            export_data.append({
+                'ID': str(item.get('_id', '')),
+                'Nome': item.get('title', ''),
+                'Descrição': item.get('description', ''),
+                'Categoria': item.get('category', ''),
+                'Fornecedor': item.get('distributer', ''),
+                'Unidade': item.get('unit', ''),
+                'Estoque': item.get('stock', 0),
+                'Estoque Mínimo': item.get('low_stock_threshold', 10),
+                'Preço de Compra': item.get('purchase_price', 0),
+                'Preço de Venda': item.get('sell_price', 0),
+                'Código de Barras': item.get('barcode', ''),
+                'Valor Total': (item.get('sell_price', 0) or item.get('purchase_price', 0)) * item.get('stock', 0),
+                'Status Estoque': 'Baixo' if item.get('stock', 0) <= item.get('low_stock_threshold', 10) else 'Normal',
+                'Criado em': item.get('created_at', '').strftime('%d/%m/%Y %H:%M') if item.get('created_at') else '',
+                'Atualizado em': item.get('updated_at', '').strftime('%d/%m/%Y %H:%M') if item.get('updated_at') else ''
+            })
+        
+        # Create DataFrame
+        df = pd.DataFrame(export_data)
+        
+        # Generate Excel file
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Produtos', index=False)
+            
+            # Get the workbook and worksheet
+            workbook = writer.book
+            worksheet = writer.sheets['Produtos']
+            
+            # Auto-adjust column widths
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 50)
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+        
+        output.seek(0)
+        
+        filename = f"produtos_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
+        if low_stock_only:
+            filename = f"produtos_estoque_baixo_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
+        
+        return StreamingResponse(
+            io.BytesIO(output.read()),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error exporting items to Excel: {str(e)}")
+
+@router.get("/export/stock-transactions", response_description="Export stock transactions to Excel")
+async def export_stock_transactions_to_excel(
+    current_user_id: str = Depends(get_current_user_id),
+    transaction_type: Optional[StockTransactionType] = Query(None, description="Filter by transaction type"),
+    item_id: Optional[str] = Query(None, description="Filter by item ID")
+):
+    """Export user's stock transactions to Excel"""
+    try:
+        transactions = await StockTransactionService.get_transactions(
+            user_id=current_user_id,
+            transaction_type=transaction_type.value if transaction_type else None,
+            item_id=item_id
+        )
+        
+        if not transactions:
+            raise HTTPException(status_code=404, detail="No transactions found")
+        
+        # Prepare data for Excel export
+        export_data = []
+        for transaction in transactions:
+            # Get item details
+            item = await ItemService.get_by_id(transaction.get('item_id', ''))
+            item_name = item.get('title', 'Item não encontrado') if item else 'Item não encontrado'
+            
+            export_data.append({
+                'ID': str(transaction.get('_id', '')),
+                'Produto': item_name,
+                'Tipo': transaction.get('transaction_type', '').upper(),
+                'Quantidade': transaction.get('quantity', 0),
+                'Motivo': transaction.get('reason', ''),
+                'Observações': transaction.get('notes', ''),
+                'Impacto Financeiro': transaction.get('cost_impact', 0),
+                'Número de Referência': transaction.get('reference_number', ''),
+                'Data': transaction.get('created_at', '').strftime('%d/%m/%Y %H:%M') if transaction.get('created_at') else ''
+            })
+        
+        # Create DataFrame
+        df = pd.DataFrame(export_data)
+        
+        # Generate Excel file
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Transações de Estoque', index=False)
+            
+            # Get the workbook and worksheet
+            workbook = writer.book
+            worksheet = writer.sheets['Transações de Estoque']
+            
+            # Auto-adjust column widths
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 50)
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+        
+        output.seek(0)
+        
+        filename = f"transacoes_estoque_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
+        
+        return StreamingResponse(
+            io.BytesIO(output.read()),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error exporting stock transactions to Excel: {str(e)}")
+
+@router.get("/export/activity-logs", response_description="Export activity logs to Excel")
+async def export_activity_logs_to_excel(
+    current_user_id: str = Depends(get_current_user_id),
+    activity_type: Optional[ActivityType] = Query(None, description="Filter by activity type"),
+    entity_type: Optional[str] = Query(None, description="Filter by entity type")
+):
+    """Export user's activity logs to Excel"""
+    try:
+        activities = await ActivityLogService.get_user_activities(
+            user_id=current_user_id,
+            activity_type=activity_type.value if activity_type else None,
+            entity_type=entity_type
+        )
+        
+        if not activities:
+            raise HTTPException(status_code=404, detail="No activities found")
+        
+        # Prepare data for Excel export
+        export_data = []
+        for activity in activities:
+            export_data.append({
+                'ID': str(activity.get('_id', '')),
+                'Tipo de Atividade': activity.get('activity_type', '').replace('_', ' ').title(),
+                'Descrição': activity.get('description', ''),
+                'Entidade ID': activity.get('entity_id', ''),
+                'Tipo de Entidade': activity.get('entity_type', ''),
+                'IP': activity.get('ip_address', ''),
+                'User Agent': activity.get('user_agent', ''),
+                'Data': activity.get('created_at', '').strftime('%d/%m/%Y %H:%M') if activity.get('created_at') else ''
+            })
+        
+        # Create DataFrame
+        df = pd.DataFrame(export_data)
+        
+        # Generate Excel file
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Histórico de Atividades', index=False)
+            
+            # Get the workbook and worksheet
+            workbook = writer.book
+            worksheet = writer.sheets['Histórico de Atividades']
+            
+            # Auto-adjust column widths
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 50)
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+        
+        output.seek(0)
+        
+        filename = f"historico_atividades_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
+        
+        return StreamingResponse(
+            io.BytesIO(output.read()),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error exporting activity logs to Excel: {str(e)}")
+
+@router.get("/export/full-report", response_description="Export full inventory report to Excel")
+async def export_full_inventory_report(
+    current_user_id: str = Depends(get_current_user_id)
+):
+    """Export comprehensive inventory report with multiple sheets to Excel"""
+    try:
+        # Get all data
+        items = await ItemService.get_by_user(current_user_id)
+        transactions = await StockTransactionService.get_transactions(user_id=current_user_id)
+        activities = await ActivityLogService.get_user_activities(user_id=current_user_id, limit=1000)
+        low_stock_items = await ItemService.get_low_stock_items(current_user_id)
+        
+        # Generate Excel file with multiple sheets
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            
+            # Sheet 1: Products Overview
+            if items:
+                products_data = []
+                for item in items:
+                    products_data.append({
+                        'Nome': item.get('title', ''),
+                        'Categoria': item.get('category', ''),
+                        'Fornecedor': item.get('distributer', ''),
+                        'Estoque': item.get('stock', 0),
+                        'Preço de Venda': item.get('sell_price', 0),
+                        'Valor Total': (item.get('sell_price', 0) or item.get('purchase_price', 0)) * item.get('stock', 0)
+                    })
+                
+                df_products = pd.DataFrame(products_data)
+                df_products.to_excel(writer, sheet_name='Produtos', index=False)
+            
+            # Sheet 2: Low Stock Alert
+            if low_stock_items:
+                low_stock_data = []
+                for item in low_stock_items:
+                    low_stock_data.append({
+                        'Nome': item.get('title', ''),
+                        'Estoque Atual': item.get('stock', 0),
+                        'Estoque Mínimo': item.get('low_stock_threshold', 10),
+                        'Categoria': item.get('category', ''),
+                        'Fornecedor': item.get('distributer', '')
+                    })
+                
+                df_low_stock = pd.DataFrame(low_stock_data)
+                df_low_stock.to_excel(writer, sheet_name='Estoque Baixo', index=False)
+            
+            # Sheet 3: Transaction Summary
+            if transactions:
+                transaction_summary = {}
+                for transaction in transactions:
+                    trans_type = transaction.get('transaction_type', 'unknown')
+                    if trans_type not in transaction_summary:
+                        transaction_summary[trans_type] = {'count': 0, 'total_quantity': 0, 'total_cost': 0}
+                    
+                    transaction_summary[trans_type]['count'] += 1
+                    transaction_summary[trans_type]['total_quantity'] += transaction.get('quantity', 0)
+                    transaction_summary[trans_type]['total_cost'] += transaction.get('cost_impact', 0)
+                
+                summary_data = []
+                for trans_type, data in transaction_summary.items():
+                    summary_data.append({
+                        'Tipo': trans_type.upper(),
+                        'Quantidade de Ocorrências': data['count'],
+                        'Quantidade Total': data['total_quantity'],
+                        'Impacto Financeiro Total': data['total_cost']
+                    })
+                
+                df_summary = pd.DataFrame(summary_data)
+                df_summary.to_excel(writer, sheet_name='Resumo Transações', index=False)
+        
+        output.seek(0)
+        
+        filename = f"relatorio_completo_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
+        
+        return StreamingResponse(
+            io.BytesIO(output.read()),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error exporting full report to Excel: {str(e)}")
+
+# Units of Measurement Routes
+@router.get("/units", response_description="Get all units of measurement")
+async def get_units():
+    """Get all available units of measurement"""
+    try:
+        units = get_all_units()
+        return {"units": units}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching units: {str(e)}")
+
+@router.get("/units/categories", response_description="Get unit categories")
+async def get_units_categories():
+    """Get all unit categories"""
+    try:
+        categories = get_unit_categories()
+        return {"categories": categories}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching unit categories: {str(e)}")
+
+@router.get("/units/category/{category}", response_description="Get units by category")
+async def get_units_by_category_endpoint(category: str):
+    """Get units for a specific category"""
+    try:
+        units = get_units_by_category(category)
+        if not units:
+            raise HTTPException(status_code=404, detail=f"Category '{category}' not found")
+        return {"category": category, "units": units}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching units for category: {str(e)}")
